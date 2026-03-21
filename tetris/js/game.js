@@ -266,7 +266,7 @@ const Game = (() => {
         cur.y++;
       } else {
         lock();
-        if (!running) return;
+        if (!running) { drawBoard(); return; }
         // Reset accumulator so the newly spawned piece gets a full interval
         dropAccum = 0;
         break;
@@ -370,11 +370,12 @@ const Game = (() => {
     if (ok({ ...cur, y: cur.y + 1 })) {
       cur.y++; score += 1;
       dropAccum = 0; // reset drop timer so soft-drop doesn't double-trigger
+      if (cbScore) cbScore({ score, level, lines });
     } else {
-      lock(); if (!running) return;
+      lock(); if (!running) { drawBoard(); return; }
       dropAccum = 0; // give new piece a full interval after a soft-drop lock
+      // lock() already called cbScore after sweep()
     }
-    if (cbScore) cbScore({ score, level, lines });
     drawBoard();
   }
 
@@ -384,15 +385,20 @@ const Game = (() => {
     if (ok({ ...cur, shape: rot })) {
       cur.shape = rot;
     } else {
-      // Wall kicks: try horizontal offsets, then floor kick (dy = -1)
+      // Wall kicks: try horizontal offsets first, then floor kicks (dy = -1, -2)
       let kicked = false;
       for (const k of [1, -1, 2, -2]) {
         if (ok({ ...cur, x: cur.x + k, shape: rot })) {
           cur.x += k; cur.shape = rot; kicked = true; break;
         }
       }
-      if (!kicked && ok({ ...cur, y: cur.y - 1, shape: rot })) {
-        cur.y--; cur.shape = rot;
+      if (!kicked) {
+        // Floor kick: try moving up 1 or 2 rows (handles I-piece near bottom)
+        for (const dy of [-1, -2]) {
+          if (ok({ ...cur, y: cur.y + dy, shape: rot })) {
+            cur.y += dy; cur.shape = rot; kicked = true; break;
+          }
+        }
       }
     }
     drawBoard();
@@ -404,9 +410,9 @@ const Game = (() => {
     while (ok({ ...cur, y: cur.y + 1 })) { cur.y++; dropped++; }
     score += dropped * 2;
     flashAlpha = 0.65;
-    if (cbScore) cbScore({ score, level, lines });
+    // Don't call cbScore here — lock() calls it after sweep() with the correct final score
     lock();
-    if (!running) return;
+    if (!running) { drawBoard(); return; }
     dropAccum = 0; // give new piece a clean interval after hard drop
     drawBoard();
   }
