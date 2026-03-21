@@ -137,12 +137,13 @@ const UI = (() => {
 
     if (!running || paused) {
       if (e.code === 'Space') {
+        e.preventDefault();
         if (running) { Game.resume(); return; }
         // If a save exists, Space resumes rather than wiping it
         if (Game.hasSaved()) { resumeSaved(); } else { newGame(); }
         return;
       }
-      if (e.code === 'KeyP' && paused) { Game.resume(); return; }
+      if (e.code === 'KeyP' && paused) { e.preventDefault(); Game.resume(); return; }
       return;
     }
 

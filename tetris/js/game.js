@@ -255,7 +255,8 @@ const Game = (() => {
 
     // lastT === 0 means "first frame after start/resume — sync clock without advancing"
     if (lastT > 0) {
-      dropAccum += ts - lastT;
+      // Cap delta to 500 ms so a backgrounded tab doesn't cause a burst of drops
+      dropAccum += Math.min(ts - lastT, 500);
     }
     lastT = ts;
 
@@ -266,6 +267,9 @@ const Game = (() => {
       } else {
         lock();
         if (!running) return;
+        // Reset accumulator so the newly spawned piece gets a full interval
+        dropAccum = 0;
+        break;
       }
     }
 
@@ -368,6 +372,7 @@ const Game = (() => {
       dropAccum = 0; // reset drop timer so soft-drop doesn't double-trigger
     } else {
       lock(); if (!running) return;
+      dropAccum = 0; // give new piece a full interval after a soft-drop lock
     }
     if (cbScore) cbScore({ score, level, lines });
     drawBoard();
@@ -379,10 +384,15 @@ const Game = (() => {
     if (ok({ ...cur, shape: rot })) {
       cur.shape = rot;
     } else {
+      // Wall kicks: try horizontal offsets, then floor kick (dy = -1)
+      let kicked = false;
       for (const k of [1, -1, 2, -2]) {
         if (ok({ ...cur, x: cur.x + k, shape: rot })) {
-          cur.x += k; cur.shape = rot; break;
+          cur.x += k; cur.shape = rot; kicked = true; break;
         }
+      }
+      if (!kicked && ok({ ...cur, y: cur.y - 1, shape: rot })) {
+        cur.y--; cur.shape = rot;
       }
     }
     drawBoard();
@@ -397,6 +407,7 @@ const Game = (() => {
     if (cbScore) cbScore({ score, level, lines });
     lock();
     if (!running) return;
+    dropAccum = 0; // give new piece a clean interval after hard drop
     drawBoard();
   }
 
