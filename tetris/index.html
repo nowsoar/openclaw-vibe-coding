@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Tetris — 俄罗斯方块</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="game-wrapper">
+
+  <!-- Board -->
+  <div class="game-container">
+    <canvas id="board" width="400" height="800"></canvas>
+    <div class="overlay" id="overlay">
+      <h2>TETRIS</h2>
+      <div class="ov-divider"></div>
+      <div class="ov-sub">PRESS START OR SPACE</div>
+    </div>
+    <div class="combo-display" id="combo-display"></div>
+  </div>
+
+  <!-- Side panel -->
+  <div class="side-panel">
+
+    <div class="panel-box">
+      <h3>Score</h3>
+      <div class="score-value" id="score">0</div>
+    </div>
+
+    <div class="panel-box">
+      <h3>Best</h3>
+      <div class="score-value" id="high-score">0</div>
+    </div>
+
+    <div class="panel-box stats-row">
+      <div>
+        <h3>Level</h3>
+        <div class="stat-value" id="level">1</div>
+      </div>
+      <div>
+        <h3>Lines</h3>
+        <div class="stat-value" id="lines">0</div>
+      </div>
+    </div>
+
+    <div class="panel-box">
+      <h3>Time Played</h3>
+      <div class="stat-value stat-time" id="total-time">0s</div>
+    </div>
+
+    <div class="panel-box">
+      <h3>Next</h3>
+      <canvas id="next" width="120" height="108"></canvas>
+    </div>
+
+    <div class="panel-box">
+      <button class="btn btn-start" onclick="UI.newGame()">START</button>
+    </div>
+
+    <div class="panel-box">
+      <button class="btn btn-pause" id="pauseBtn" onclick="UI.togglePause()" disabled>PAUSE</button>
+    </div>
+
+    <div class="panel-box">
+      <button class="btn btn-sound" id="soundBtn" onclick="UI.toggleSound()">SFX ON</button>
+    </div>
+
+    <div class="panel-box">
+      <div class="hint">
+        <div><span>← →</span> Move</div>
+        <div><span>↑ / Z</span> Rotate</div>
+        <div><span>↓</span> Soft drop</div>
+        <div><span>Space</span> Hard drop</div>
+        <div><span>P</span> Pause</div>
+        <div><span>Touch</span> Swipe</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+
+</body>
+</html>
