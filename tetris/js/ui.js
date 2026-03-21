@@ -136,7 +136,12 @@ const UI = (() => {
     const paused  = Game.isPaused();
 
     if (!running || paused) {
-      if (e.code === 'Space') { running ? Game.resume() : newGame(); return; }
+      if (e.code === 'Space') {
+        if (running) { Game.resume(); return; }
+        // If a save exists, Space resumes rather than wiping it
+        if (Game.hasSaved()) { resumeSaved(); } else { newGame(); }
+        return;
+      }
       if (e.code === 'KeyP' && paused) { Game.resume(); return; }
       return;
     }
@@ -171,6 +176,7 @@ const UI = (() => {
     const pb = document.getElementById('pauseBtn');
     pb.disabled = false;
     setPauseBtn(false);
+    refreshStats();
   }
 
   function toggleSound() {
@@ -237,7 +243,8 @@ const UI = (() => {
         `<div style="display:flex;gap:10px">` +
         `  <button class="btn btn-start"  style="width:auto;padding:10px 18px" onclick="UI.resumeSaved()">RESUME</button>` +
         `  <button class="btn btn-danger" style="width:auto;padding:10px 18px" onclick="UI.newGame()">NEW GAME</button>` +
-        `</div>`
+        `</div>` +
+        `<div class="ov-sub" style="margin-top:8px">SPACE TO RESUME</div>`
       );
     } else {
       setOverlay(

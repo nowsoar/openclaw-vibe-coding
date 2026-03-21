@@ -282,6 +282,10 @@ const Game = (() => {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     nctx.fillStyle = '#0a0a1e';
     nctx.fillRect(0, 0, nCanvas.width, nCanvas.height);
+    // Save progress when user closes or navigates away
+    window.addEventListener('beforeunload', () => {
+      if (running && !paused) saveProgress();
+    });
   }
 
   function start(fromSave) {
