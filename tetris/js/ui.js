@@ -168,6 +168,8 @@ const UI = (() => {
     const pb = document.getElementById('pauseBtn');
     pb.disabled = false;
     setPauseBtn(false);
+    const sb = document.getElementById('startBtn');
+    if (sb) sb.disabled = true;
     refreshStats();
   }
 
@@ -177,6 +179,8 @@ const UI = (() => {
     const pb = document.getElementById('pauseBtn');
     pb.disabled = false;
     setPauseBtn(false);
+    const sb = document.getElementById('startBtn');
+    if (sb) sb.disabled = true;
     refreshStats();
   }
 
@@ -203,7 +207,8 @@ const UI = (() => {
         setOverlay(
           '<h2>PAUSED</h2>' +
           '<div class="ov-divider"></div>' +
-          '<div class="ov-sub">PRESS P OR RESUME</div>'
+          '<div class="ov-sub">PRESS P OR CLICK RESUME</div>' +
+          '<button type="button" class="btn btn-start" style="width:auto;padding:10px 24px;margin-top:12px" onclick="UI.togglePause()">RESUME</button>'
         );
       } else {
         hideOverlay();
@@ -214,6 +219,8 @@ const UI = (() => {
       SFX.gameOver();
       refreshStats();
       document.getElementById('pauseBtn').disabled = true;
+      const sb = document.getElementById('startBtn');
+      if (sb) sb.disabled = false;
       setOverlay(
         `<h2>GAME OVER</h2>` +
         `<div class="ov-divider"></div>` +
