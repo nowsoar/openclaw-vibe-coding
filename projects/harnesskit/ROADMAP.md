@@ -31,11 +31,11 @@ Blueprint（工作流编排）
 
 ---
 
-## Phase 1：基础架构与 Primitive Assets（Day 1-7）
+## Phase 1：基础架构与 Primitive Assets
 
 **目标**：建立项目骨架，实现四类原子资产的 CRUD 和版本管理。
 
-### Day 1：项目初始化
+### Phase 1.1：项目初始化
 **任务**：
 1. 创建项目目录结构
    - `harness_kit/` —— Python 包
@@ -59,7 +59,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 2：Prompt 资产管理
+### Phase 1.2：Prompt 资产管理
 **任务**：
 1. Prompt 数据模型（YAML）
    ```yaml
@@ -100,7 +100,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 3：Schema 资产管理
+### Phase 1.3：Schema 资产管理
 **任务**：
 1. Schema 数据模型（JSON Schema）
    ```json
@@ -133,7 +133,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 4：Context 模板管理
+### Phase 1.4：Context 模板管理
 **任务**：
 1. Context 数据模型（YAML）
    ```yaml
@@ -169,7 +169,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 5：Rule 约束管理
+### Phase 1.5：Rule 约束管理
 **任务**：
 1. Rule 数据模型（YAML）
    ```yaml
@@ -200,7 +200,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 6：资产间引用解析
+### Phase 1.6：资产间引用解析
 **任务**：
 1. 实现引用语法解析（统一格式：`{name}@{version}`，类型从上下文推断）
    - `code-reviewer@v0.1.0` → 精确版本
@@ -223,7 +223,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 7：Phase 1 集成测试与文档
+### Phase 1.7：Phase 1 集成测试与文档
 **任务**：
 1. 集成测试
    - 完整的用户场景测试：init → save prompt → save schema → create context → 引用它们
@@ -244,11 +244,11 @@ Blueprint（工作流编排）
 
 ---
 
-## Phase 2：Skill 层（Day 8-14）
+## Phase 2：Skill 层
 
 **目标**：实现 Skill 定义、I/O 契约、独立运行。
 
-### Day 8：Skill 数据模型与存储
+### Phase 2.1：Skill 数据模型与存储
 **任务**：
 1. Skill YAML 格式
    ```yaml
@@ -300,7 +300,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 9：Skill CLI 命令
+### Phase 2.2：Skill CLI 命令
 **任务**：
 1. 实现 `harnesskit skill` 子命令：
    - `save <name> --file skill.yaml`
@@ -320,7 +320,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 10：Skill 独立运行
+### Phase 2.3：Skill 独立运行
 **任务**：
 1. LLM 调用基础模块
    - 支持 OpenAI API 格式
@@ -346,7 +346,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 11：Rule 运行时检查
+### Phase 2.4：Rule 运行时检查
 **任务**：
 1. 硬规则（hard rule）运行时检查
    - LLM 输出后自动运行所有 hard rules
@@ -368,7 +368,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 12：Skill 版本管理进阶
+### Phase 2.5：Skill 版本管理进阶
 **任务**：
 1. Skill Tag 功能
    - `harnesskit skill tag <name> --name production`
@@ -388,7 +388,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 13-14：Phase 2 集成测试
+### Phase 2.6：Phase 2 集成测试
 **任务**：
 1. 完整 Skill 使用流程测试
    - 创建 Prompt → 创建 Rule → 创建 Skill → 运行 → 检查结果
@@ -407,11 +407,11 @@ Blueprint（工作流编排）
 
 ---
 
-## Phase 3：Harness 与 Agent 层（Day 15-21）
+## Phase 3：Harness 与 Agent 层
 
 **目标**：实现 Harness 配置组合、Agent 持续运行、上下文管理。
 
-### Day 15：Harness 数据模型
+### Phase 3.1：Harness 数据模型
 **任务**：
 1. Harness YAML 格式
    ```yaml
@@ -451,7 +451,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 16：Harness CLI 命令
+### Phase 3.2：Harness CLI 命令
 **任务**：
 1. 实现 `harnesskit harness` 子命令：
    - `create <name> --skills skill1,skill2`
@@ -474,7 +474,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 17：Memory 记忆系统
+### Phase 3.3：Memory 记忆系统
 **任务**：
 1. Memory 存储实现
    - Session Memory：内存中，进程结束消失
@@ -509,7 +509,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 18：Agent 定义与运行
+### Phase 3.4：Agent 定义与运行
 **任务**：
 1. Agent YAML 格式
    ```yaml
@@ -545,7 +545,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 19-21：Phase 3 集成与测试
+### Phase 3.5：Phase 3 集成与测试
 **任务**：
 1. 完整流程测试
    - init → create prompt → create skill → create harness → create agent → run
@@ -567,11 +567,11 @@ Blueprint（工作流编排）
 
 ---
 
-## Phase 4：Blueprint 工作流编排（Day 22-28）
+## Phase 4：Blueprint 工作流编排
 
 **目标**：实现确定性节点 + Agentic 节点的混合工作流。
 
-### Day 22：Blueprint YAML 格式
+### Phase 4.1：Blueprint YAML 格式
 **任务**：
 1. Blueprint 数据结构
    ```yaml
@@ -623,7 +623,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 23：Blueprint 验证
+### Phase 4.2：Blueprint 验证
 **任务**：
 1. 静态验证
    - 检查所有引用的 Harness/Skill 是否存在
@@ -640,7 +640,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 24：确定性节点执行器
+### Phase 4.3：确定性节点执行器
 **任务**：
 1. 本地命令执行
    - 使用 subprocess 执行 shell 命令
@@ -661,7 +661,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 25：Agentic 节点执行器
+### Phase 4.4：Agentic 节点执行器
 **任务**：
 1. 调用 Harness/Skill
    - 根据配置调用对应的 Harness 或 Skill
@@ -682,7 +682,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 26：变量传递系统
+### Phase 4.5：变量传递系统
 **任务**：
 1. 全局上下文
    - `{{inputs.xxx}}` —— Blueprint 输入
@@ -702,7 +702,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 27-28：Blueprint 运行与调试
+### Phase 4.6：Blueprint 运行与调试
 **任务**：
 1. 实现 `harnesskit blueprint run <name>`
    - 按顺序执行所有步骤
@@ -725,11 +725,11 @@ Blueprint（工作流编排）
 
 ---
 
-## Phase 5：评估引擎（Day 29-35）
+## Phase 5：评估引擎
 
 **目标**：量化测试 Harness/Skill 效果，支持 A/B 对比。
 
-### Day 29：Test Suite 定义
+### Phase 5.1：Test Suite 定义
 **任务**：
 1. Test Suite YAML 格式
    ```yaml
@@ -772,7 +772,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 30：断言引擎
+### Phase 5.2：断言引擎
 **任务**：
 1. 实现断言类型
    - `contains` —— 包含指定值
@@ -795,7 +795,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 31：单次评估运行
+### Phase 5.3：单次评估运行
 **任务**：
 1. 实现 `harnesskit eval run <skill/harness> --suite <suite-name>`
    - 加载 Test Suite
@@ -833,7 +833,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 32：A/B 对比
+### Phase 5.4：A/B 对比
 **任务**：
 1. 实现 `harnesskit eval compare --a skill@v1 --b skill@v2 --suite suite-name`
    - 两个版本跑同一个测试集
@@ -851,7 +851,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 33：多模型 Benchmark
+### Phase 5.5：多模型 Benchmark
 **任务**：
 1. 实现 `harnesskit eval benchmark <skill> --suite suite-name --models "gpt-4o,claude-3-5,deepseek-v3"`
    - 同一个 Skill 用不同模型跑
@@ -868,7 +868,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 34-35：评估系统集成
+### Phase 5.6：评估系统集成
 **任务**：
 1. 与 Harness 集成
    - `harnesskit harness create --eval-suite suite-name`
@@ -889,11 +889,11 @@ Blueprint（工作流编排）
 
 ---
 
-## Phase 6：可观测性与自改进（Day 36-42）
+## Phase 6：可观测性与自改进
 
 **目标**：调用追踪、成本分析、Harness 健康检查、改进飞轮。
 
-### Day 36：调用日志系统
+### Phase 6.1：调用日志系统
 **任务**：
 1. 日志格式（JSON Lines）
    ```json
@@ -910,7 +910,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 37：成本追踪
+### Phase 6.2：成本追踪
 **任务**：
 1. Token 价格配置
    - `.harness/config.yaml` 中配置各模型的 input/output 价格
@@ -930,7 +930,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 38：统计仪表盘
+### Phase 6.3：统计仪表盘
 **任务**：
 1. 实现 `harnesskit stats show <skill/harness>`
    - 调用次数、成功率、平均耗时
@@ -947,7 +947,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 39：改进飞轮核心
+### Phase 6.4：改进飞轮核心
 **任务**：
 1. 改进日志格式
    ```json
@@ -967,7 +967,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 40：Harness 健康检查
+### Phase 6.5：Harness 健康检查
 **任务**：
 1. 健康检查规则
    - 检查是否有 Skill 超过 14 天未更新
@@ -989,7 +989,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 41-42：Phase 6 集成与优化
+### Phase 6.6：Phase 6 集成与优化
 **任务**：
 1. 完整的可观测性流程测试
 2. 性能优化（日志写入、查询速度）
@@ -1001,11 +1001,11 @@ Blueprint（工作流编排）
 
 ---
 
-## Phase 7：TUI 终端界面（Day 43-49）
+## Phase 7：TUI 终端界面
 
 **目标**：用 `textual` 实现可交互的终端界面。
 
-### Day 43：TUI 框架搭建
+### Phase 7.1：TUI 框架搭建
 **任务**：
 1. 引入 `textual` 依赖
 2. 实现 `harnesskit tui` 命令入口
@@ -1019,7 +1019,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 44：Skill 浏览器
+### Phase 7.2：Skill 浏览器
 **任务**：
 1. 左侧：Skill 列表（可搜索、过滤）
 2. 右侧：Skill 详情（版本、描述、I/O 定义）
@@ -1035,7 +1035,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 45：Prompt Diff 可视化
+### Phase 7.3：Prompt Diff 可视化
 **任务**：
 1. 选择两个 Prompt 版本
 2. 并排对比显示（左旧右新）
@@ -1048,7 +1048,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 46：Eval 结果可视化
+### Phase 7.4：Eval 结果可视化
 **任务**：
 1. 测试套件列表
 2. 选择套件后显示所有 cases
@@ -1061,7 +1061,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 47：实时日志流
+### Phase 7.5：实时日志流
 **任务**：
 1. 类似 `tail -f` 的实时日志显示
 2. 支持过滤（按 Skill、按时间）
@@ -1074,7 +1074,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 48-49：TUI 优化与完善
+### Phase 7.6：TUI 优化与完善
 **任务**：
 1. 添加帮助页面（`?` 键）
 2. 主题切换（light/dark）
@@ -1087,11 +1087,11 @@ Blueprint（工作流编排）
 
 ---
 
-## Phase 8：Web Playground（Day 50-60）
+## Phase 8：Web Playground
 
 **目标**：FastAPI + 轻量前端，实现 Web UI。
 
-### Day 50：Web 服务框架
+### Phase 8.1：Web 服务框架
 **任务**：
 1. 引入 `fastapi` 和 `uvicorn`
 2. 实现 `harnesskit serve` 命令
@@ -1108,7 +1108,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 51：前端框架搭建
+### Phase 8.2：前端框架搭建
 **任务**：
 1. 前端技术选型：**HTMX + Alpine.js**（无需 React/Vue，配合 FastAPI 极简高效）
 2. 创建前端目录 `harness_kit/web/static/`
@@ -1123,7 +1123,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 52-53：Prompt Playground
+### Phase 8.3：Prompt Playground
 **任务**：
 1. 前端界面：
    - 左侧：变量输入表单（根据 Skill inputs 动态生成）
@@ -1141,7 +1141,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 54-55：A/B 对比界面
+### Phase 8.4：A/B 对比界面
 **任务**：
 1. 选择两个版本（左 v1，右 v2）
 2. 同时发送请求
@@ -1154,7 +1154,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 56-57：Eval Dashboard
+### Phase 8.5：Eval Dashboard
 **任务**：
 1. 测试套件列表
 2. 运行按钮
@@ -1167,7 +1167,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 58：Blueprint 可视化
+### Phase 8.6：Blueprint 可视化
 **任务**：
 1. 简单的节点图（用 Mermaid.js 或 SVG）
 2. 显示步骤和依赖关系
@@ -1179,7 +1179,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 59：MCP Server 导出 + AGENTS.md 导出
+### Phase 8.7：MCP Server 导出 + AGENTS.md 导出
 **任务**：
 1. 实现 `harnesskit export mcp`
 2. 启动 MCP Server
@@ -1199,7 +1199,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 59.5：Skills Registry
+### Phase 8.8：Skills Registry
 **任务**：
 1. 本地 Registry 索引：`~/.harnesskit/registry.json`
    - 已安装的 Skills 列表
@@ -1225,7 +1225,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 60：打包发布
+### Phase 8.9：打包发布
 **任务**：
 1. 完善 `pyproject.toml`
 2. 发布到 PyPI
