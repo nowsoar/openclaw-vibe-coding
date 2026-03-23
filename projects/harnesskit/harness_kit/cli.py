@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+import yaml
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
@@ -20,6 +21,7 @@ from harness_kit.config import (
 )
 from harness_kit import prompt as _prompt_mod
 from harness_kit import schema as _schema_mod
+from harness_kit import context as _context_mod
 
 app = typer.Typer(
     name="harnesskit",
@@ -42,6 +44,13 @@ app.add_typer(prompt_app, name="prompt")
 
 schema_app = typer.Typer(help="Manage schema assets.", no_args_is_help=True)
 app.add_typer(schema_app, name="schema")
+
+# ---------------------------------------------------------------------------
+# context sub-app
+# ---------------------------------------------------------------------------
+
+context_app = typer.Typer(help="Manage context template assets.", no_args_is_help=True)
+app.add_typer(context_app, name="context")
 
 
 def _require_init() -> None:
@@ -450,6 +459,197 @@ def schema_delete(
 
     try:
         _schema_mod.delete_schema(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Deleted[/green] {target}")
+
+
+# ---------------------------------------------------------------------------
+# context save
+# ---------------------------------------------------------------------------
+
+
+@context_app.command("save")
+def context_save(
+    name: str = typer.Argument(..., help="Context name (identifier)."),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Read YAML from file."),
+    description: str = typer.Option("", "--description", "-d", help="Short description."),
+    tags: str = typer.Option("", "--tags", "-t", help="Comma-separated tags."),
+    changelog: str = typer.Option("", "--changelog", help="Changelog note for this version."),
+) -> None:
+    """Save a context template from --file / stdin (YAML with slots + template)."""
+    _require_init()
+
+    if file is not None:
+        raw = file.read_text(encoding="utf-8")
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read()
+        if not raw.strip():
+            console.print("[red]✗ Stdin is empty. Provide YAML via --file or stdin.[/red]")
+            raise typer.Exit(1)
+    else:
+        console.print("[red]✗ Provide YAML via --file or stdin.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        payload = yaml.safe_load(raw)
+    except Exception as e:
+        console.print(f"[red]✗ Invalid YAML: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not isinstance(payload, dict):
+        console.print("[red]✗ YAML must be a mapping object.[/red]")
+        raise typer.Exit(1)
+
+    template = payload.get("template", "")
+    slots = payload.get("slots", [])
+    description = description or payload.get("description", "")
+    if not tags:
+        tags = ",".join(payload.get("tags") or [])
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+    version, is_new = _context_mod.save_context(
+        name=name,
+        template=template,
+        slots=slots,
+        description=description,
+        tags=tag_list,
+        changelog=changelog,
+    )
+
+    action = "Created" if is_new else "Updated"
+    console.print(f"[green]✓ {action}[/green] context [bold]{name}[/bold] → [cyan]{version}[/cyan]")
+
+
+# ---------------------------------------------------------------------------
+# context render
+# ---------------------------------------------------------------------------
+
+
+@context_app.command("render")
+def context_render(
+    ref: str = typer.Argument(..., help="Context name or name@version."),
+    var: list[str] = typer.Option([], "--var", help="Variable as key=value. Repeatable."),
+) -> None:
+    """Render a context template with --var key=value substitutions."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    variables: dict[str, object] = {}
+    for v in var:
+        if "=" not in v:
+            console.print(f"[red]✗ Invalid --var format: '{v}'. Use key=value.[/red]")
+            raise typer.Exit(1)
+        k, _, val = v.partition("=")
+        variables[k.strip()] = val
+
+    try:
+        rendered = _context_mod.render_context(name, variables, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(rendered)
+
+
+# ---------------------------------------------------------------------------
+# context show
+# ---------------------------------------------------------------------------
+
+
+@context_app.command("show")
+def context_show(
+    ref: str = typer.Argument(..., help="Context name or name@version."),
+) -> None:
+    """Show a context template. Use name@v0.1.0 for a specific version."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    try:
+        data = _context_mod.load_context(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold cyan]{data['name']}[/bold cyan]  [dim]{data['version']}[/dim]")
+    if data.get("description"):
+        console.print(f"[italic]{data['description']}[/italic]")
+    if data.get("tags"):
+        console.print(f"[dim]tags:[/dim] {', '.join(data['tags'])}")
+    if data.get("slots"):
+        console.print("[dim]slots:[/dim]")
+        for slot in data["slots"]:
+            req = " [red](required)[/red]" if slot.get("required") else ""
+            default = f"  [dim]default: {slot['default']}[/dim]" if "default" in slot else ""
+            console.print(f"  • {slot['name']}{req}{default}")
+    console.print(f"\n[bold]Template:[/bold]\n{data.get('template', '')}")
+    if data.get("changelog"):
+        console.print(f"\n[dim]changelog: {data['changelog']}[/dim]")
+    console.print(f"[dim]created_at: {data.get('created_at', '')}[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# context list
+# ---------------------------------------------------------------------------
+
+
+@context_app.command("list")
+def context_list() -> None:
+    """List all context templates (rich table)."""
+    _require_init()
+
+    contexts = _context_mod.list_contexts()
+    if not contexts:
+        console.print("[dim]No contexts saved yet.[/dim]")
+        return
+
+    table = Table(title="Contexts", show_lines=False, header_style="bold cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Version", style="cyan")
+    table.add_column("Description")
+    table.add_column("Slots", style="dim")
+    table.add_column("Updated", style="dim")
+
+    for c in contexts:
+        slot_names = ", ".join(s["name"] for s in (c.get("slots") or []))
+        created = (c.get("created_at") or "")[:19].replace("T", " ")
+        table.add_row(
+            c.get("name", ""),
+            c.get("version", ""),
+            c.get("description", ""),
+            slot_names,
+            created,
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# context delete
+# ---------------------------------------------------------------------------
+
+
+@context_app.command("delete")
+def context_delete(
+    ref: str = typer.Argument(..., help="Context name or name@version to delete."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Delete a context or a specific version."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    target = f"[bold]{name}[/bold]" if version is None else f"[bold]{name}[/bold]@[cyan]{version}[/cyan]"
+    if not yes:
+        typer.confirm(f"Delete {target}?", abort=True)
+
+    try:
+        _context_mod.delete_context(name, version)
     except FileNotFoundError as e:
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
