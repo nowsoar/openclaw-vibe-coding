@@ -90,7 +90,7 @@ Blueprint（工作流编排）
 3. 版本管理
    - 语义版本 `v0.0.1`，自动递增 patch
    - 存储路径：`.harness/prompts/{name}/v{x}.{y}.{z}.yaml`
-   - 软链接 `current` 指向最新版本
+   - `_current` 文本文件（内容为版本号，如 `v0.1.0`）替代软链接，跨平台兼容
 
 **验收标准**：
 - 所有 prompt 命令正常工作
@@ -174,7 +174,6 @@ Blueprint（工作流编排）
 1. Rule 数据模型（YAML）
    ```yaml
    name: no-hallucination
-   version: v0.1.0
    type: hard  # hard 走 linter，soft 走 prompt
    description: "禁止输出不存在的信息"
    check:
@@ -182,6 +181,7 @@ Blueprint（工作流编排）
      pattern: "(根据我所知|我猜测|可能是)"
    fix_hint: "请删除推测性表述，只陈述确认的事实"
    ```
+   > **注意**：Rule 无版本号，是全局配置，直接覆盖（修改即生效，不需要版本追踪）
 
 2. 实现 `harnesskit rule` 子命令：
    - `add <name> --type hard --pattern "..."`
@@ -202,9 +202,10 @@ Blueprint（工作流编排）
 
 ### Day 6：资产间引用解析
 **任务**：
-1. 实现引用语法解析
-   - `prompt@code-reviewer@v0.1.0` → 精确版本
-   - `prompt@code-reviewer` → current 版本
+1. 实现引用语法解析（统一格式：`{name}@{version}`，类型从上下文推断）
+   - `code-reviewer@v0.1.0` → 精确版本
+   - `code-reviewer` → current 版本
+   - `code-reviewer@production` → tag 别名
    - 支持跨类型引用检查
 
 2. 依赖检查工具
@@ -1107,14 +1108,18 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 51：静态文件服务
+### Day 51：前端框架搭建
 **任务**：
-1. 创建前端目录 `harness_kit/web/static/`
-2. 简单 HTML 框架
-3. 静态文件挂载到 `/`
+1. 前端技术选型：**HTMX + Alpine.js**（无需 React/Vue，配合 FastAPI 极简高效）
+2. 创建前端目录 `harness_kit/web/static/`
+3. 基础 HTML 框架 + TailwindCSS CDN（样式）
+4. 导航栏：Skills / Harness / Eval / Logs / Settings
+5. 静态文件挂载到 `/`
 
 **验收标准**：
-- 访问 `http://localhost:7749` 能看到页面
+- 访问 `http://localhost:7749` 能看到完整页面框架
+- 导航正常跳转
+- HTMX 动态加载工作正常
 
 ---
 
@@ -1174,16 +1179,49 @@ Blueprint（工作流编排）
 
 ---
 
-### Day 59：MCP Server 导出
+### Day 59：MCP Server 导出 + AGENTS.md 导出
 **任务**：
 1. 实现 `harnesskit export mcp`
 2. 启动 MCP Server
 3. 暴露所有 Skills 为 MCP Tools
 4. 供 Claude/Cursor 调用
 
+5. 实现 `harnesskit export agents-md`（重要功能）
+   - 根据已注册的 Skills 和 Harness 自动生成 AGENTS.md
+   - 严格控制在 60 行以内（ETH Zurich 研究：超过 60 行反而降低 Agent 表现）
+   - 格式：顶层是「技能目录」，每个 Skill 一行描述 + 指向详细文档的路径
+   - 每次更新 Skill 后可重新生成
+
 **验收标准**：
-- MCP Server 能启动
-- Claude/Cursor 能发现并调用
+- MCP Server 能启动，Claude/Cursor 能发现并调用
+- 生成的 AGENTS.md 不超过 60 行
+- AGENTS.md 内容清晰，指向正确的 Skill 文档
+
+---
+
+### Day 59.5：Skills Registry
+**任务**：
+1. 本地 Registry 索引：`~/.harnesskit/registry.json`
+   - 已安装的 Skills 列表
+   - 版本、来源、安装时间
+
+2. 实现 `harnesskit skill search <keyword>`
+   - 先搜索本地已有 Skills
+   - 后期支持远程 Registry
+
+3. 实现 `harnesskit skill install <name>`
+   - 从本地路径安装：`harnesskit skill install ./my-skill.yaml`
+   - 从 Git URL 安装：`harnesskit skill install github:user/repo/skills/name`
+   - 从远程 Registry 安装（Phase 完成后）
+
+4. 实现 `harnesskit skill publish <name>`
+   - 打包 Skill 及其依赖的 Prompts/Rules/Schemas
+   - 导出为 `.hsk` 包格式（实际是 zip）
+   - 后期支持推送到中央 Registry
+
+**验收标准**：
+- 本地安装/导出流程可用
+- 打包格式正确，包含所有依赖
 
 ---
 
@@ -1209,7 +1247,7 @@ Blueprint（工作流编排）
 ├── prompts/{name}/v{x}.{y}.{z}.yaml + current
 ├── schemas/{name}/v{x}.{y}.{z}.json + current
 ├── contexts/{name}/v{x}.{y}.{z}.yaml + current
-├── rules/{name}/v{x}.{y}.{z}.yaml + current
+├── rules/{name}.yaml               # Rule 无版本（全局配置，直接覆盖）
 ├── skills/{name}/v{x}.{y}.{z}.yaml + current
 ├── harnesses/{name}/v{x}.{y}.{z}.yaml + current
 ├── agents/{name}.yaml  # 无版本子目录，直接覆盖
