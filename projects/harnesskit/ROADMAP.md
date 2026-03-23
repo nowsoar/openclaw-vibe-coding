@@ -195,8 +195,8 @@ Blueprint（工作流编排）
    - 返回匹配结果和 fix_hint
 
 **验收标准**：
-- `test` 命令正确检测违规内容
-- hard/soft 类型正确区分
+- ✅ `test` 命令正确检测违规内容
+- ✅ hard/soft 类型正确区分
 
 ---
 

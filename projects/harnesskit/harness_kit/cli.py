@@ -22,6 +22,7 @@ from harness_kit.config import (
 from harness_kit import prompt as _prompt_mod
 from harness_kit import schema as _schema_mod
 from harness_kit import context as _context_mod
+from harness_kit import rule as _rule_mod
 
 app = typer.Typer(
     name="harnesskit",
@@ -51,6 +52,13 @@ app.add_typer(schema_app, name="schema")
 
 context_app = typer.Typer(help="Manage context template assets.", no_args_is_help=True)
 app.add_typer(context_app, name="context")
+
+# ---------------------------------------------------------------------------
+# rule sub-app
+# ---------------------------------------------------------------------------
+
+rule_app = typer.Typer(help="Manage rule constraints.", no_args_is_help=True)
+app.add_typer(rule_app, name="rule")
 
 
 def _require_init() -> None:
@@ -655,6 +663,160 @@ def context_delete(
         raise typer.Exit(1)
 
     console.print(f"[green]✓ Deleted[/green] {target}")
+
+
+# ---------------------------------------------------------------------------
+# rule add
+# ---------------------------------------------------------------------------
+
+
+@rule_app.command("add")
+def rule_add(
+    name: str = typer.Argument(..., help="Rule name (identifier)."),
+    rule_type: str = typer.Option("hard", "--type", "-t", help="Rule type: hard or soft."),
+    check_type: str = typer.Option("regex", "--check-type", help="Check type: regex or length."),
+    pattern: str = typer.Option(..., "--pattern", "-p", help="Regex pattern or max length integer."),
+    description: str = typer.Option("", "--description", "-d", help="Short description."),
+    fix_hint: str = typer.Option("", "--fix-hint", help="Hint shown when rule triggers."),
+) -> None:
+    """Add or update a rule constraint."""
+    _require_init()
+
+    try:
+        is_new = _rule_mod.save_rule(
+            name,
+            rule_type=rule_type,
+            check_type=check_type,
+            pattern=pattern,
+            description=description,
+            fix_hint=fix_hint,
+        )
+    except ValueError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    verb = "Created" if is_new else "Updated"
+    console.print(f"[green]✓ {verb} rule[/green] [bold]{name}[/bold] (type=[cyan]{rule_type}[/cyan])")
+
+
+# ---------------------------------------------------------------------------
+# rule list
+# ---------------------------------------------------------------------------
+
+
+@rule_app.command("list")
+def rule_list() -> None:
+    """List all rules (rich table)."""
+    _require_init()
+
+    rules = _rule_mod.list_rules()
+    if not rules:
+        console.print("[dim]No rules saved yet.[/dim]")
+        return
+
+    table = Table(title="Rules", show_lines=False, header_style="bold cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Type", style="cyan")
+    table.add_column("Check", style="dim")
+    table.add_column("Pattern", style="dim")
+    table.add_column("Description")
+
+    for r in rules:
+        check = r.get("check") or {}
+        table.add_row(
+            r.get("name", ""),
+            r.get("type", ""),
+            check.get("type", ""),
+            check.get("pattern", ""),
+            r.get("description", ""),
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# rule show
+# ---------------------------------------------------------------------------
+
+
+@rule_app.command("show")
+def rule_show(
+    name: str = typer.Argument(..., help="Rule name."),
+) -> None:
+    """Show a rule's definition."""
+    _require_init()
+
+    try:
+        rule = _rule_mod.load_rule(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    check = rule.get("check") or {}
+    console.print(f"\n[bold]Rule:[/bold] {rule.get('name', '')}")
+    console.print(f"[bold]Type:[/bold] [cyan]{rule.get('type', '')}[/cyan]")
+    console.print(f"[bold]Description:[/bold] {rule.get('description', '') or '(none)'}")
+    console.print(f"[bold]Check type:[/bold] {check.get('type', '')}")
+    console.print(f"[bold]Pattern:[/bold] {check.get('pattern', '')}")
+    console.print(f"[bold]Fix hint:[/bold] {rule.get('fix_hint', '') or '(none)'}")
+    console.print(f"[bold]Created:[/bold] {(rule.get('created_at') or '')[:19].replace('T', ' ')}")
+
+
+# ---------------------------------------------------------------------------
+# rule test
+# ---------------------------------------------------------------------------
+
+
+@rule_app.command("test")
+def rule_test(
+    name: str = typer.Argument(..., help="Rule name."),
+    input_text: str = typer.Option(..., "--input", "-i", help="Input text to test."),
+) -> None:
+    """Test whether input text triggers a rule."""
+    _require_init()
+
+    try:
+        result = _rule_mod.check_rule_by_name(name, input_text)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    if result.triggered:
+        console.print(f"[red]✗ TRIGGERED[/red] — rule [bold]{name}[/bold] ([cyan]{result.rule_type}[/cyan])")
+        if result.matches:
+            console.print(f"  [bold]Matches:[/bold] {result.matches}")
+        if result.fix_hint:
+            console.print(f"  [bold]Fix hint:[/bold] {result.fix_hint}")
+    else:
+        console.print(f"[green]✓ PASSED[/green] — rule [bold]{name}[/bold] did not trigger")
+
+
+# ---------------------------------------------------------------------------
+# rule delete
+# ---------------------------------------------------------------------------
+
+
+@rule_app.command("delete")
+def rule_delete(
+    name: str = typer.Argument(..., help="Rule name."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Delete a rule."""
+    _require_init()
+
+    if not yes:
+        typer.confirm(f"Delete rule '{name}'?", abort=True)
+
+    try:
+        _rule_mod.delete_rule(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Deleted rule[/green] [bold]{name}[/bold]")
 
 
 # ---------------------------------------------------------------------------
