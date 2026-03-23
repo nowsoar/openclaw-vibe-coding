@@ -295,8 +295,11 @@ Blueprint（工作流编排）
 3. 实现 `harnesskit skill save` —— 从配置文件创建 Skill
 
 **验收标准**：
-- Skill YAML 结构正确
-- 能引用 Phase 1 创建的资产
+- ✅ Skill YAML 结构正确（name/version/description/trigger/inputs/outputs/assets/examples/changelog 全字段支持）
+- ✅ 存储路径 `.harness/skills/{name}/v{x}.{y}.{z}.yaml` + `_current` 文件正确
+- ✅ `harnesskit skill save --file <yaml>` 命令正常工作（创建/更新，自动递增 patch 版本）
+- ✅ 能引用 Phase 1 创建的资产（assets 字段支持 prompts/schemas/rules/context 任意引用）
+- ✅ 36 个 pytest 测试全部通过（unit + CLI integration）
 
 ---
 

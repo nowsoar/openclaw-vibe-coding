@@ -24,6 +24,7 @@ from harness_kit import schema as _schema_mod
 from harness_kit import context as _context_mod
 from harness_kit import rule as _rule_mod
 from harness_kit import resolver as _resolver_mod
+from harness_kit import skill as _skill_mod
 
 app = typer.Typer(
     name="harnesskit",
@@ -60,6 +61,13 @@ app.add_typer(context_app, name="context")
 
 rule_app = typer.Typer(help="Manage rule constraints.", no_args_is_help=True)
 app.add_typer(rule_app, name="rule")
+
+# ---------------------------------------------------------------------------
+# skill sub-app
+# ---------------------------------------------------------------------------
+
+skill_app = typer.Typer(help="Manage skill assets.", no_args_is_help=True)
+app.add_typer(skill_app, name="skill")
 
 
 def _require_init() -> None:
@@ -898,6 +906,165 @@ def doctor() -> None:
 
     if total_broken > 0 or report.cycles:
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# skill save
+# ---------------------------------------------------------------------------
+
+
+@skill_app.command("save")
+def skill_save(
+    file: Path = typer.Option(..., "--file", "-f", help="Path to the Skill YAML file."),
+) -> None:
+    """Save a skill from a YAML --file. Auto-increments patch version."""
+    _require_init()
+
+    if not file.exists():
+        console.print(f"[red]✗ File not found: {file}[/red]")
+        raise typer.Exit(1)
+
+    raw = file.read_text(encoding="utf-8")
+    try:
+        data = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        console.print(f"[red]✗ Invalid YAML: {exc}[/red]")
+        raise typer.Exit(1)
+
+    if not isinstance(data, dict):
+        console.print("[red]✗ Skill YAML must be a mapping at the top level.[/red]")
+        raise typer.Exit(1)
+
+    errors = _skill_mod._validate_skill_data(data)
+    if errors:
+        console.print("[red]✗ Skill YAML validation failed:[/red]")
+        for err in errors:
+            console.print(f"  [red]•[/red] {err}")
+        raise typer.Exit(1)
+
+    try:
+        version, is_new = _skill_mod.save_skill_from_dict(data)
+    except ValueError as exc:
+        console.print(f"[red]✗ {exc}[/red]")
+        raise typer.Exit(1)
+
+    action = "Created" if is_new else "Updated"
+    name = data.get("name", "")
+    console.print(f"[green]✓ {action}[/green] skill [bold]{name}[/bold] → [cyan]{version}[/cyan]")
+
+
+# ---------------------------------------------------------------------------
+# skill show
+# ---------------------------------------------------------------------------
+
+
+@skill_app.command("show")
+def skill_show(
+    ref: str = typer.Argument(..., help="Skill name or name@version."),
+) -> None:
+    """Show a skill definition. Use name@v0.1.0 for a specific version."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    try:
+        data = _skill_mod.load_skill(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold cyan]{data['name']}[/bold cyan]  [dim]{data['version']}[/dim]")
+    if data.get("description"):
+        console.print(f"[italic]{data['description']}[/italic]")
+    if data.get("trigger"):
+        console.print(f"[dim]trigger:[/dim] {data['trigger']}")
+
+    if data.get("inputs"):
+        console.print("\n[bold]Inputs:[/bold]")
+        for inp in data["inputs"]:
+            req = " [red](required)[/red]" if inp.get("required") else ""
+            default = f"  default={inp['default']}" if "default" in inp else ""
+            console.print(f"  • {inp.get('name')} ([cyan]{inp.get('type')}[/cyan]){req}{default}")
+
+    if data.get("outputs"):
+        console.print("\n[bold]Outputs:[/bold]")
+        for out in data["outputs"]:
+            schema_ref = f"  schema={out['schema']}" if out.get("schema") else ""
+            console.print(f"  • {out.get('name')} ([cyan]{out.get('type')}[/cyan]){schema_ref}")
+
+    if data.get("assets"):
+        console.print("\n[bold]Assets:[/bold]")
+        console.print(
+            yaml.dump(data["assets"], allow_unicode=True, default_flow_style=False).strip()
+        )
+
+    if data.get("examples"):
+        console.print(f"\n[bold]Examples:[/bold] {len(data['examples'])} example(s)")
+
+    if data.get("changelog"):
+        console.print(f"\n[dim]changelog: {data['changelog']}[/dim]")
+    console.print(f"[dim]created_at: {data.get('created_at', '')}[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# skill list
+# ---------------------------------------------------------------------------
+
+
+@skill_app.command("list")
+def skill_list() -> None:
+    """List all skills (rich table)."""
+    _require_init()
+
+    skills = _skill_mod.list_skills()
+    if not skills:
+        console.print("[dim]No skills saved yet.[/dim]")
+        return
+
+    table = Table(title="Skills", show_lines=False, header_style="bold cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Version", style="cyan")
+    table.add_column("Description")
+    table.add_column("Trigger", style="dim")
+    table.add_column("Updated", style="dim")
+
+    for s in skills:
+        created = (s.get("created_at") or "")[:19].replace("T", " ")
+        table.add_row(
+            s.get("name", ""),
+            s.get("version", ""),
+            s.get("description", ""),
+            s.get("trigger", ""),
+            created,
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# skill delete
+# ---------------------------------------------------------------------------
+
+
+@skill_app.command("delete")
+def skill_delete(
+    ref: str = typer.Argument(..., help="Skill name or name@version to delete."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Delete a skill or a specific version."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    target = f"[bold]{name}[/bold]" if version is None else f"[bold]{name}[/bold]@[cyan]{version}[/cyan]"
+    if not yes:
+        typer.confirm(f"Delete {target}?", abort=True)
+
+    try:
+        _skill_mod.delete_skill(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Deleted[/green] {target}")
 
 
 # ---------------------------------------------------------------------------
