@@ -233,3 +233,192 @@ def delete_skill(
             _current_file(name, base).write_text(remaining[-1], encoding="utf-8")
         else:
             _current_file(name, base).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Asset reference helpers (Phase 2.2)
+# ---------------------------------------------------------------------------
+
+
+def _parse_asset_ref(ref: str) -> tuple[str, str | None]:
+    """'name@version' -> ('name', 'version'). 'name' -> ('name', None)."""
+    if "@" in ref:
+        parts = ref.split("@", 1)
+        return parts[0], parts[1]
+    return ref, None
+
+
+def diff_skills(
+    name_a: str,
+    version_a: str | None,
+    name_b: str,
+    version_b: str | None,
+    base: Path | None = None,
+) -> list[str]:
+    """Return unified-diff lines between two skill versions (full YAML)."""
+    import difflib
+
+    data_a = load_skill(name_a, version_a, base)
+    data_b = load_skill(name_b, version_b, base)
+
+    label_a = f"{name_a}@{version_a or get_current_version(name_a, base)}"
+    label_b = f"{name_b}@{version_b or get_current_version(name_b, base)}"
+
+    text_a = yaml.dump(data_a, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    text_b = yaml.dump(data_b, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    return list(
+        difflib.unified_diff(
+            text_a.splitlines(keepends=True),
+            text_b.splitlines(keepends=True),
+            fromfile=label_a,
+            tofile=label_b,
+        )
+    )
+
+
+def validate_skill_references(
+    name: str,
+    version: str | None = None,
+    base: Path | None = None,
+) -> list[str]:
+    """Check that all asset references in a skill are resolvable.
+
+    Returns a list of error strings (empty = all references valid).
+    """
+    from harness_kit import prompt as _prompt_mod
+    from harness_kit import schema as _schema_mod
+    from harness_kit import rule as _rule_mod
+    from harness_kit import context as _context_mod
+
+    errors: list[str] = []
+
+    try:
+        data = load_skill(name, version, base)
+    except FileNotFoundError as e:
+        return [str(e)]
+
+    assets = data.get("assets") or {}
+
+    # Check prompt references
+    prompts = assets.get("prompts") or {}
+    if isinstance(prompts, dict):
+        for role, ref in prompts.items():
+            if not ref:
+                continue
+            pname, pver = _parse_asset_ref(str(ref))
+            try:
+                _prompt_mod.load_prompt(pname, pver, base)
+            except FileNotFoundError:
+                errors.append(f"prompts.{role}: '{ref}' not found.")
+
+    # Check schema references
+    schemas = assets.get("schemas") or []
+    if isinstance(schemas, list):
+        for ref in schemas:
+            sname, sver = _parse_asset_ref(str(ref))
+            try:
+                _schema_mod.load_schema(sname, sver, base)
+            except FileNotFoundError:
+                errors.append(f"schemas: '{ref}' not found.")
+
+    # Check rule references (rules have no versioning)
+    rules = assets.get("rules") or []
+    if isinstance(rules, list):
+        for ref in rules:
+            rname, _ = _parse_asset_ref(str(ref))
+            rf = _rule_mod._rule_file(rname, base)
+            if not rf.exists():
+                errors.append(f"rules: '{ref}' not found.")
+
+    # Check context reference
+    context_ref = assets.get("context")
+    if context_ref:
+        cname, cver = _parse_asset_ref(str(context_ref))
+        try:
+            _context_mod.load_context(cname, cver, base)
+        except FileNotFoundError:
+            errors.append(f"context: '{context_ref}' not found.")
+
+    return errors
+
+
+def render_skill_prompt(
+    name: str,
+    version: str | None = None,
+    base: Path | None = None,
+) -> dict[str, str]:
+    """Resolve all asset references and return rendered content.
+
+    Returns a dict with keys: 'system', 'user', 'context', 'rules', 'schemas'.
+    Values are the resolved content strings (empty string if not present).
+    """
+    from harness_kit import prompt as _prompt_mod
+    from harness_kit import schema as _schema_mod
+    from harness_kit import rule as _rule_mod
+    from harness_kit import context as _context_mod
+
+    data = load_skill(name, version, base)
+    assets = data.get("assets") or {}
+    result: dict[str, str] = {
+        "system": "",
+        "user": "",
+        "context": "",
+        "rules": "",
+        "schemas": "",
+    }
+
+    # Resolve prompt references
+    prompts = assets.get("prompts") or {}
+    if isinstance(prompts, dict):
+        for role in ("system", "user"):
+            ref = prompts.get(role)
+            if ref:
+                pname, pver = _parse_asset_ref(str(ref))
+                try:
+                    pdata = _prompt_mod.load_prompt(pname, pver, base)
+                    result[role] = pdata.get("content", "")
+                except FileNotFoundError:
+                    result[role] = f"[ERROR: '{ref}' not found]"
+
+    # Resolve context reference
+    context_ref = assets.get("context")
+    if context_ref:
+        cname, cver = _parse_asset_ref(str(context_ref))
+        try:
+            cdata = _context_mod.load_context(cname, cver, base)
+            result["context"] = cdata.get("template", "")
+        except FileNotFoundError:
+            result["context"] = f"[ERROR: '{context_ref}' not found]"
+
+    # Collect rule descriptions
+    rules = assets.get("rules") or []
+    rule_lines = []
+    for ref in (rules if isinstance(rules, list) else []):
+        rname, _ = _parse_asset_ref(str(ref))
+        rf = _rule_mod._rule_file(rname, base)
+        if rf.exists():
+            try:
+                rdata = yaml.safe_load(rf.read_text(encoding="utf-8"))
+                rule_lines.append(
+                    f"[{rdata.get('type', '?')}] {rname}: {rdata.get('description', '')}"
+                )
+            except Exception:
+                rule_lines.append(f"[?] {rname}")
+        else:
+            rule_lines.append(f"[ERROR: '{ref}' not found]")
+    result["rules"] = "\n".join(rule_lines)
+
+    # Collect schema names/refs
+    schemas = assets.get("schemas") or []
+    schema_lines = []
+    for ref in (schemas if isinstance(schemas, list) else []):
+        sname, sver = _parse_asset_ref(str(ref))
+        try:
+            sdata = _schema_mod.load_schema(sname, sver, base)
+            schema_lines.append(f"{sname}: {sdata.get('description', '')}")
+        except FileNotFoundError:
+            schema_lines.append(f"[ERROR: '{ref}' not found]")
+    result["schemas"] = "\n".join(schema_lines)
+
+    return result

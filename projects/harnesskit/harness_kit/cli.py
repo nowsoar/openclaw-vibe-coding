@@ -961,6 +961,7 @@ def skill_save(
 @skill_app.command("show")
 def skill_show(
     ref: str = typer.Argument(..., help="Skill name or name@version."),
+    render: bool = typer.Option(False, "--render", help="Resolve and display full prompt content."),
 ) -> None:
     """Show a skill definition. Use name@v0.1.0 for a specific version."""
     _require_init()
@@ -1004,6 +1005,25 @@ def skill_show(
         console.print(f"\n[dim]changelog: {data['changelog']}[/dim]")
     console.print(f"[dim]created_at: {data.get('created_at', '')}[/dim]")
 
+    if render:
+        rendered = _skill_mod.render_skill_prompt(name, version)
+        console.print("\n[bold magenta]── Rendered Prompt ──[/bold magenta]")
+        if rendered["system"]:
+            console.print("\n[bold]System Prompt:[/bold]")
+            console.print(rendered["system"])
+        if rendered["user"]:
+            console.print("\n[bold]User Prompt:[/bold]")
+            console.print(rendered["user"])
+        if rendered["context"]:
+            console.print("\n[bold]Context Template:[/bold]")
+            console.print(rendered["context"])
+        if rendered["rules"]:
+            console.print("\n[bold]Rules:[/bold]")
+            console.print(rendered["rules"])
+        if rendered["schemas"]:
+            console.print("\n[bold]Schemas (Tools):[/bold]")
+            console.print(rendered["schemas"])
+
 
 # ---------------------------------------------------------------------------
 # skill list
@@ -1038,6 +1058,68 @@ def skill_list() -> None:
         )
 
     console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# skill diff
+# ---------------------------------------------------------------------------
+
+
+@skill_app.command("diff")
+def skill_diff(
+    ref_a: str = typer.Argument(..., help="First skill ref: name or name@version."),
+    ref_b: str = typer.Argument(..., help="Second skill ref: name or name@version."),
+) -> None:
+    """Show a coloured diff between two skill versions."""
+    _require_init()
+    name_a, version_a = _parse_name_version(ref_a)
+    name_b, version_b = _parse_name_version(ref_b)
+
+    try:
+        lines = _skill_mod.diff_skills(name_a, version_a, name_b, version_b)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    if not lines:
+        console.print("[dim]No differences.[/dim]")
+        return
+
+    for line in lines:
+        if line.startswith("+++") or line.startswith("---"):
+            console.print(f"[bold]{line}[/bold]", end="")
+        elif line.startswith("@@"):
+            console.print(f"[cyan]{line}[/cyan]", end="")
+        elif line.startswith("+"):
+            console.print(f"[green]{line}[/green]", end="")
+        elif line.startswith("-"):
+            console.print(f"[red]{line}[/red]", end="")
+        else:
+            console.print(line, end="")
+
+
+# ---------------------------------------------------------------------------
+# skill validate
+# ---------------------------------------------------------------------------
+
+
+@skill_app.command("validate")
+def skill_validate(
+    ref: str = typer.Argument(..., help="Skill name or name@version."),
+) -> None:
+    """Validate that all asset references in a skill exist."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    errors = _skill_mod.validate_skill_references(name, version)
+    if not errors:
+        console.print(f"[green]✓ All references valid[/green] for skill [bold]{ref}[/bold]")
+        return
+
+    console.print(f"[red]✗ {len(errors)} broken reference(s) in skill [bold]{ref}[/bold]:[/red]")
+    for err in errors:
+        console.print(f"  [red]•[/red] {err}")
+    raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
