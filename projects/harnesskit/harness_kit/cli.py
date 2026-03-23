@@ -1,7 +1,15 @@
 """HarnessKit CLI entry point."""
 
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Optional
+
 import typer
 from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 
 from harness_kit.config import (
     SUBDIRS,
@@ -10,6 +18,7 @@ from harness_kit.config import (
     is_initialized,
     read_config,
 )
+from harness_kit import prompt as _prompt_mod
 
 app = typer.Typer(
     name="harnesskit",
@@ -18,6 +27,249 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+# ---------------------------------------------------------------------------
+# prompt sub-app
+# ---------------------------------------------------------------------------
+
+prompt_app = typer.Typer(help="Manage prompt assets.", no_args_is_help=True)
+app.add_typer(prompt_app, name="prompt")
+
+
+def _require_init() -> None:
+    if not is_initialized():
+        console.print("[red]✗ Not initialized.[/red] Run [bold]harnesskit init[/bold] first.")
+        raise typer.Exit(1)
+
+
+def _parse_name_version(ref: str) -> tuple[str, str | None]:
+    """Split 'name@v1.2.3' → ('name', 'v1.2.3'). Without @ returns (ref, None)."""
+    if "@" in ref:
+        name, ver = ref.rsplit("@", 1)
+        return name, ver
+    return ref, None
+
+
+# ---------------------------------------------------------------------------
+# prompt save
+# ---------------------------------------------------------------------------
+
+
+@prompt_app.command("save")
+def prompt_save(
+    name: str = typer.Argument(..., help="Prompt name (identifier)."),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Read content from file."),
+    content: Optional[str] = typer.Option(None, "--content", "-c", help="Content string."),
+    description: str = typer.Option("", "--description", "-d", help="Short description."),
+    tags: str = typer.Option("", "--tags", "-t", help="Comma-separated tags."),
+    changelog: str = typer.Option("", "--changelog", help="Changelog note for this version."),
+) -> None:
+    """Save a prompt from --file / --content / stdin. Auto-increments patch version."""
+    _require_init()
+
+    # Resolve content
+    if file is not None:
+        prompt_content = file.read_text(encoding="utf-8")
+    elif content is not None:
+        prompt_content = content
+    elif not sys.stdin.isatty():
+        prompt_content = sys.stdin.read()
+        if not prompt_content.strip():
+            console.print("[red]✗ Stdin is empty. Provide content via --file, --content, or stdin.[/red]")
+            raise typer.Exit(1)
+    else:
+        console.print("[red]✗ Provide content via --file, --content, or stdin.[/red]")
+        raise typer.Exit(1)
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+    version, is_new = _prompt_mod.save_prompt(
+        name=name,
+        content=prompt_content,
+        description=description,
+        tags=tag_list,
+        changelog=changelog,
+    )
+
+    action = "Created" if is_new else "Updated"
+    console.print(f"[green]✓ {action}[/green] prompt [bold]{name}[/bold] → [cyan]{version}[/cyan]")
+
+
+# ---------------------------------------------------------------------------
+# prompt show
+# ---------------------------------------------------------------------------
+
+
+@prompt_app.command("show")
+def prompt_show(
+    ref: str = typer.Argument(..., help="Prompt name or name@version."),
+) -> None:
+    """Show a prompt. Use name@v0.1.0 for a specific version."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    try:
+        data = _prompt_mod.load_prompt(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold cyan]{data['name']}[/bold cyan]  [dim]{data['version']}[/dim]")
+    if data.get("description"):
+        console.print(f"[italic]{data['description']}[/italic]")
+    if data.get("tags"):
+        console.print(f"[dim]tags:[/dim] {', '.join(data['tags'])}")
+    if data.get("variables"):
+        console.print("[dim]variables:[/dim]")
+        for var in data["variables"]:
+            req = " [red](required)[/red]" if var.get("required") else ""
+            default = f"  [dim]default: {var['default']}[/dim]" if "default" in var else ""
+            console.print(f"  • {var['name']}{req}{default}")
+    console.print(f"\n[bold]Content:[/bold]\n{data.get('content', '')}")
+    if data.get("changelog"):
+        console.print(f"\n[dim]changelog: {data['changelog']}[/dim]")
+    console.print(f"[dim]created_at: {data.get('created_at', '')}[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# prompt list
+# ---------------------------------------------------------------------------
+
+
+@prompt_app.command("list")
+def prompt_list() -> None:
+    """List all prompts (rich table)."""
+    _require_init()
+
+    prompts = _prompt_mod.list_prompts()
+    if not prompts:
+        console.print("[dim]No prompts saved yet.[/dim]")
+        return
+
+    table = Table(title="Prompts", show_lines=False, header_style="bold cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Version", style="cyan")
+    table.add_column("Description")
+    table.add_column("Tags", style="dim")
+    table.add_column("Updated", style="dim")
+
+    for p in prompts:
+        tags_str = ", ".join(p.get("tags") or [])
+        created = (p.get("created_at") or "")[:19].replace("T", " ")
+        table.add_row(
+            p.get("name", ""),
+            p.get("version", ""),
+            p.get("description", ""),
+            tags_str,
+            created,
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# prompt history
+# ---------------------------------------------------------------------------
+
+
+@prompt_app.command("history")
+def prompt_history(
+    name: str = typer.Argument(..., help="Prompt name."),
+) -> None:
+    """Show version history timeline for a prompt."""
+    _require_init()
+
+    versions = _prompt_mod.list_versions(name)
+    if not versions:
+        console.print(f"[red]✗ Prompt '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    current = _prompt_mod.get_current_version(name)
+    console.print(f"\n[bold]History: [cyan]{name}[/cyan][/bold]\n")
+    for i, ver in enumerate(versions):
+        is_last = i == len(versions) - 1
+        connector = "└─" if is_last else "├─"
+        marker = " [green]← current[/green]" if ver == current else ""
+        try:
+            data = _prompt_mod.load_prompt(name, ver)
+            ts = (data.get("created_at") or "")[:19].replace("T", " ")
+            cl = f"  [dim]{data.get('changelog', '')}[/dim]" if data.get("changelog") else ""
+        except Exception:
+            ts = ""
+            cl = ""
+        console.print(f"  {connector} [cyan]{ver}[/cyan]{marker}  [dim]{ts}[/dim]{cl}")
+
+
+# ---------------------------------------------------------------------------
+# prompt diff
+# ---------------------------------------------------------------------------
+
+
+@prompt_app.command("diff")
+def prompt_diff(
+    ref_a: str = typer.Argument(..., help="First ref, e.g. name@v0.0.1"),
+    ref_b: str = typer.Argument(..., help="Second ref, e.g. name@v0.0.2"),
+) -> None:
+    """Show coloured diff between two prompt versions."""
+    _require_init()
+
+    name_a, ver_a = _parse_name_version(ref_a)
+    name_b, ver_b = _parse_name_version(ref_b)
+
+    try:
+        lines = _prompt_mod.diff_prompts(name_a, ver_a, name_b, ver_b)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    if not lines:
+        console.print("[dim]No differences.[/dim]")
+        return
+
+    for line in lines:
+        line = line.rstrip("\n")
+        if line.startswith("+++") or line.startswith("---"):
+            console.print(Text(line, style="bold"))
+        elif line.startswith("@@"):
+            console.print(Text(line, style="cyan"))
+        elif line.startswith("+"):
+            console.print(Text(line, style="green"))
+        elif line.startswith("-"):
+            console.print(Text(line, style="red"))
+        else:
+            console.print(line)
+
+
+# ---------------------------------------------------------------------------
+# prompt delete
+# ---------------------------------------------------------------------------
+
+
+@prompt_app.command("delete")
+def prompt_delete(
+    ref: str = typer.Argument(..., help="Prompt name or name@version to delete."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Delete a prompt or a specific version."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    target = f"[bold]{name}[/bold]" if version is None else f"[bold]{name}[/bold]@[cyan]{version}[/cyan]"
+    if not yes:
+        typer.confirm(f"Delete {target}?", abort=True)
+
+    try:
+        _prompt_mod.delete_prompt(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Deleted[/green] {target}")
+
+
+# ---------------------------------------------------------------------------
+# init
+# ---------------------------------------------------------------------------
 
 
 @app.callback()

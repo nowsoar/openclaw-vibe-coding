@@ -67,6 +67,85 @@ Edit `.harness/config.yaml` to change the default model, point to a different AP
 
 ---
 
+## Prompt Asset Management
+
+Prompts are versioned YAML files stored under `.harness/prompts/{name}/`.
+Each save auto-increments the patch version (`v0.0.1 → v0.0.2 → …`).
+
+### Save a prompt
+
+```bash
+# From a string
+harnesskit prompt save code-reviewer --content "You are a senior {{language}} engineer..."
+
+# From a file
+harnesskit prompt save code-reviewer --file ./reviewer.txt
+
+# From stdin
+cat reviewer.txt | harnesskit prompt save code-reviewer
+
+# With metadata
+harnesskit prompt save code-reviewer \
+  --content "You are a senior {{language}} engineer..." \
+  --description "Senior code review engineer" \
+  --tags "code,review,security" \
+  --changelog "Initial version"
+```
+
+### Show a prompt
+
+```bash
+harnesskit prompt show code-reviewer           # latest version
+harnesskit prompt show code-reviewer@v0.0.1   # specific version
+```
+
+### List all prompts
+
+```bash
+harnesskit prompt list
+```
+
+### Version history
+
+```bash
+harnesskit prompt history code-reviewer
+```
+
+### Diff two versions
+
+```bash
+harnesskit prompt diff code-reviewer@v0.0.1 code-reviewer@v0.0.2
+```
+
+### Delete a prompt
+
+```bash
+harnesskit prompt delete code-reviewer           # delete all versions
+harnesskit prompt delete code-reviewer@v0.0.1   # delete specific version
+harnesskit prompt delete code-reviewer --yes     # skip confirmation
+```
+
+### Prompt YAML format
+
+```yaml
+name: code-reviewer
+version: v0.1.0
+description: "Senior code review engineer"
+created_at: "2026-03-23T10:00:00+00:00"
+tags: [code, review, security]
+variables:
+  - name: language
+    required: true
+  - name: focus
+    required: false
+    default: "security,performance"
+content: |
+  You are a senior {{language}} engineer...
+changelog: "Initial version"
+```
+
+---
+
 ## Development
 
 ```bash
