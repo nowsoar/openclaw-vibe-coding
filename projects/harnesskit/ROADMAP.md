@@ -128,8 +128,8 @@ Blueprint（工作流编排）
 3. 版本管理同 Prompt
 
 **验收标准**：
-- JSON Schema 能正确验证示例数据
-- validate 命令返回清晰的错误信息
+- ✅ JSON Schema 能正确验证示例数据
+- ✅ validate 命令返回清晰的错误信息
 
 ---
 

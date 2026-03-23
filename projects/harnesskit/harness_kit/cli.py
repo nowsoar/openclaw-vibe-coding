@@ -19,6 +19,7 @@ from harness_kit.config import (
     read_config,
 )
 from harness_kit import prompt as _prompt_mod
+from harness_kit import schema as _schema_mod
 
 app = typer.Typer(
     name="harnesskit",
@@ -34,6 +35,13 @@ console = Console()
 
 prompt_app = typer.Typer(help="Manage prompt assets.", no_args_is_help=True)
 app.add_typer(prompt_app, name="prompt")
+
+# ---------------------------------------------------------------------------
+# schema sub-app
+# ---------------------------------------------------------------------------
+
+schema_app = typer.Typer(help="Manage schema assets.", no_args_is_help=True)
+app.add_typer(schema_app, name="schema")
 
 
 def _require_init() -> None:
@@ -260,6 +268,188 @@ def prompt_delete(
 
     try:
         _prompt_mod.delete_prompt(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Deleted[/green] {target}")
+
+
+# ---------------------------------------------------------------------------
+# schema save
+# ---------------------------------------------------------------------------
+
+
+@schema_app.command("save")
+def schema_save(
+    name: str = typer.Argument(..., help="Schema name (identifier)."),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Read JSON from file."),
+    description: str = typer.Option("", "--description", "-d", help="Short description."),
+    tags: str = typer.Option("", "--tags", "-t", help="Comma-separated tags."),
+    changelog: str = typer.Option("", "--changelog", help="Changelog note for this version."),
+) -> None:
+    """Save a schema from --file / stdin. The JSON must contain a 'parameters' object."""
+    import json as _json
+
+    _require_init()
+
+    if file is not None:
+        raw = file.read_text(encoding="utf-8")
+    elif not sys.stdin.isatty():
+        raw = sys.stdin.read()
+        if not raw.strip():
+            console.print("[red]✗ Stdin is empty. Provide JSON via --file or stdin.[/red]")
+            raise typer.Exit(1)
+    else:
+        console.print("[red]✗ Provide JSON via --file or stdin.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        payload = _json.loads(raw)
+    except _json.JSONDecodeError as e:
+        console.print(f"[red]✗ Invalid JSON: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Accept either a bare parameters object or a full schema document
+    if "parameters" in payload:
+        parameters = payload["parameters"]
+        description = description or payload.get("description", "")
+        if not tags:
+            tags = ",".join(payload.get("tags", []))
+    else:
+        # Treat the entire payload as the parameters object
+        parameters = payload
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+    version, is_new = _schema_mod.save_schema(
+        name=name,
+        parameters=parameters,
+        description=description,
+        tags=tag_list,
+        changelog=changelog,
+    )
+
+    action = "Created" if is_new else "Updated"
+    console.print(f"[green]✓ {action}[/green] schema [bold]{name}[/bold] → [cyan]{version}[/cyan]")
+
+
+# ---------------------------------------------------------------------------
+# schema show
+# ---------------------------------------------------------------------------
+
+
+@schema_app.command("show")
+def schema_show(
+    ref: str = typer.Argument(..., help="Schema name or name@version."),
+) -> None:
+    """Show a schema. Use name@v0.1.0 for a specific version."""
+    import json as _json
+
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    try:
+        data = _schema_mod.load_schema(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold cyan]{data['name']}[/bold cyan]  [dim]{data['version']}[/dim]")
+    if data.get("description"):
+        console.print(f"[italic]{data['description']}[/italic]")
+    if data.get("tags"):
+        console.print(f"[dim]tags:[/dim] {', '.join(data['tags'])}")
+    console.print(f"\n[bold]Parameters:[/bold]")
+    console.print(_json.dumps(data.get("parameters", {}), ensure_ascii=False, indent=2))
+    if data.get("changelog"):
+        console.print(f"\n[dim]changelog: {data['changelog']}[/dim]")
+    console.print(f"[dim]created_at: {data.get('created_at', '')}[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# schema list
+# ---------------------------------------------------------------------------
+
+
+@schema_app.command("list")
+def schema_list() -> None:
+    """List all schemas (rich table)."""
+    _require_init()
+
+    schemas = _schema_mod.list_schemas()
+    if not schemas:
+        console.print("[dim]No schemas saved yet.[/dim]")
+        return
+
+    table = Table(title="Schemas", show_lines=False, header_style="bold cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Version", style="cyan")
+    table.add_column("Description")
+    table.add_column("Tags", style="dim")
+    table.add_column("Updated", style="dim")
+
+    for s in schemas:
+        tags_str = ", ".join(s.get("tags") or [])
+        created = (s.get("created_at") or "")[:19].replace("T", " ")
+        table.add_row(
+            s.get("name", ""),
+            s.get("version", ""),
+            s.get("description", ""),
+            tags_str,
+            created,
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# schema validate
+# ---------------------------------------------------------------------------
+
+
+@schema_app.command("validate")
+def schema_validate(
+    name: str = typer.Argument(..., help="Schema name to validate."),
+) -> None:
+    """Validate a schema's parameters field against JSON Schema specification."""
+    _require_init()
+
+    try:
+        errors = _schema_mod.validate_schema(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    if not errors:
+        console.print(f"[green]✓ Schema [bold]{name}[/bold] is valid.[/green]")
+    else:
+        console.print(f"[red]✗ Schema [bold]{name}[/bold] has {len(errors)} error(s):[/red]")
+        for err in errors:
+            console.print(f"  [red]•[/red] {err}")
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# schema delete
+# ---------------------------------------------------------------------------
+
+
+@schema_app.command("delete")
+def schema_delete(
+    ref: str = typer.Argument(..., help="Schema name or name@version to delete."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Delete a schema or a specific version."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    target = f"[bold]{name}[/bold]" if version is None else f"[bold]{name}[/bold]@[cyan]{version}[/cyan]"
+    if not yes:
+        typer.confirm(f"Delete {target}?", abort=True)
+
+    try:
+        _schema_mod.delete_schema(name, version)
     except FileNotFoundError as e:
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
