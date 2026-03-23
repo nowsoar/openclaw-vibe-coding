@@ -23,6 +23,7 @@ from harness_kit import prompt as _prompt_mod
 from harness_kit import schema as _schema_mod
 from harness_kit import context as _context_mod
 from harness_kit import rule as _rule_mod
+from harness_kit import resolver as _resolver_mod
 
 app = typer.Typer(
     name="harnesskit",
@@ -817,6 +818,86 @@ def rule_delete(
         raise typer.Exit(1)
 
     console.print(f"[green]✓ Deleted rule[/green] [bold]{name}[/bold]")
+
+
+# ---------------------------------------------------------------------------
+# doctor
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def doctor() -> None:
+    """Scan .harness/ health — broken references, unused assets, cycles."""
+    _require_init()
+
+    report = _resolver_mod.run_doctor()
+
+    console.print("\n[bold]HarnessKit Doctor[/bold] — .harness/ health check\n")
+
+    # Group assets by type for display
+    by_type: dict[str, list] = {}
+    for asset in report.assets:
+        by_type.setdefault(asset.asset_type, []).append(asset)
+
+    total_broken = 0
+
+    for asset_type, assets in by_type.items():
+        console.print(f"[bold]Checking {asset_type}s...[/bold] ({len(assets)} found)")
+        for a in assets:
+            if a.broken:
+                total_broken += 1
+                console.print(f"  [red]✗[/red] [bold]{a.name}[/bold] — {a.issue}")
+            else:
+                tag_str = ""
+                if a.tags:
+                    parts = [f"{t}→{v}" for t, v in a.tags.items()]
+                    tag_str = f"  [dim]tags: {', '.join(parts)}[/dim]"
+                ver_str = (
+                    f"[cyan]{a.version}[/cyan]" if a.version and a.version != "current" else ""
+                )
+                console.print(f"  [green]✓[/green] {a.name}  {ver_str}{tag_str}")
+            for bt in a.broken_tags:
+                total_broken += 1
+                console.print(
+                    f"    [red]✗[/red] tag '{bt}' → '{a.tags[bt]}' (version not found)"
+                )
+
+    if not report.assets:
+        console.print("[dim]No assets found.[/dim]")
+
+    console.print()
+
+    # Circular references
+    if report.cycles:
+        console.print(
+            f"[red]⚠ {len(report.cycles)} circular reference(s) detected:[/red]"
+        )
+        for cycle in report.cycles:
+            console.print(f"  [red]•[/red] {' → '.join(cycle)}")
+    else:
+        console.print("[green]✓ No circular references detected.[/green]")
+
+    # Unused assets
+    if report.unused_assets:
+        console.print(
+            f"\n[yellow]⚠ {len(report.unused_assets)} unreferenced asset(s)[/yellow]"
+            f" [dim](not referenced by any skill/harness):[/dim]"
+        )
+        for atype, aname in report.unused_assets:
+            console.print(f"  [dim]•[/dim] {atype}: {aname}")
+    else:
+        console.print("[green]✓ No unreferenced assets.[/green]")
+
+    # Summary
+    console.print(
+        f"\n[bold]Summary:[/bold] {total_broken} broken reference(s), "
+        f"{len(report.unused_assets)} unreferenced asset(s), "
+        f"{len(report.cycles)} cycle(s), "
+        f"{len(report.assets)} total asset(s)"
+    )
+
+    if total_broken > 0 or report.cycles:
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
