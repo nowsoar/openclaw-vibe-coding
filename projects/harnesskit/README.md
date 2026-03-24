@@ -1880,6 +1880,66 @@ print(report["summary"])  # {"total": 1, "passed": 1, "failed": 0}
 
 ---
 
+## Phase 5.4 — A/B Comparison
+
+`harnesskit eval compare` runs the **same test suite** against two skill targets and produces a side-by-side metrics comparison so you can decide which version to promote.
+
+### Usage
+
+```bash
+# Compare two versions of the same skill
+harnesskit eval compare \
+  --a code-reviewer@v0.1.0 \
+  --b code-reviewer@v0.2.0 \
+  --suite code-review-suite
+
+# Override the LLM model for both runs
+harnesskit eval compare --a my-skill@v1 --b my-skill@v2 \
+  --suite my-suite --model gpt-4o-mini
+
+# CI mode: exit 1 if either target has failures
+harnesskit eval compare --a my-skill@v1 --b my-skill@v2 \
+  --suite my-suite --ci
+```
+
+### Output
+
+The command prints two rich tables:
+
+**Metrics Comparison** — pass rate, avg tokens, total tokens, avg duration for each target, with colour-coded deltas (green = improvement):
+
+```
+           Metrics Comparison
+┌─────────────┬──────────────────┬──────────────────┬──────────────┐
+│ Metric      │ A: skill@v0.1.0  │ B: skill@v0.2.0  │ Change (B vs A) │
+├─────────────┼──────────────────┼──────────────────┼──────────────┤
+│ Pass rate   │ 2/3 (66.7%)      │ 3/3 (100.0%)     │ ▲0.333       │
+│ Avg tokens  │ 120.0            │ 110.0            │ ▲-10.0       │
+│ Total tokens│ 360              │ 330              │ ▼-30         │
+│ Avg duration│ 1.200s           │ 0.900s           │ ▲-0.3        │
+└─────────────┴──────────────────┴──────────────────┴──────────────┘
+```
+
+**Changed Cases** — only the test cases where the pass/fail status differs between A and B.
+
+A final **Recommendation** line names the better target (higher pass rate wins; tokens used as tie-breaker).
+
+### `compare_evals` Python API
+
+```python
+from harness_kit.eval import run_eval, compare_evals
+
+report_a = run_eval("my-skill@v0.1.0", "my-suite", invoke_fn_a)
+report_b = run_eval("my-skill@v0.2.0", "my-suite", invoke_fn_b)
+
+cmp = compare_evals(report_a, report_b)
+print(cmp["verdict"])          # "a" or "b"
+print(cmp["metrics_a"])        # pass_rate, total_tokens, avg_duration, …
+print(cmp["changed_cases"])    # list of cases where status differed
+```
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -1915,4 +1975,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 5.3 complete** — Eval Engine: Single Eval Run — `harnesskit eval run <skill> --suite <suite>` calls the LLM for every test case, evaluates all assertions via JSONPath, generates a structured JSON report saved to `.harness/evals/results/`, and supports `--ci` mode (exit 1 on failure). 25 new pytest tests (all passing, 979 total).
+Current status: **Phase 5.4 complete** — Eval Engine: A/B Comparison — `harnesskit eval compare --a <skill@v1> --b <skill@v2> --suite <suite>` runs both targets on the same test suite, shows a metrics comparison table (pass rate, tokens, duration) with colour-coded deltas, lists changed cases, and recommends the better version. `compare_evals` Python API also available. 21 new pytest tests (all passing, 1000 total).

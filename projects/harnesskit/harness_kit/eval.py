@@ -342,3 +342,91 @@ def run_eval(
 
     report["_result_file"] = str(result_file)
     return report
+
+
+# ---------------------------------------------------------------------------
+# A/B Comparison (Phase 5.4)
+# ---------------------------------------------------------------------------
+
+
+def _report_metrics(report: dict[str, Any]) -> dict[str, Any]:
+    """Compute aggregate metrics from a run_eval report."""
+    cases = report.get("cases") or []
+    total = len(cases)
+    passed = sum(1 for c in cases if c.get("status") == "passed")
+    failed = total - passed
+    pass_rate = round(passed / total, 4) if total > 0 else 0.0
+    total_tokens = sum(c.get("input_tokens", 0) + c.get("output_tokens", 0) for c in cases)
+    avg_tokens = round(total_tokens / total, 1) if total > 0 else 0.0
+    total_dur = sum(c.get("duration", 0.0) for c in cases)
+    avg_dur = round(total_dur / total, 3) if total > 0 else 0.0
+    return {
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "pass_rate": pass_rate,
+        "total_tokens": total_tokens,
+        "avg_tokens": avg_tokens,
+        "total_duration": round(total_dur, 3),
+        "avg_duration": avg_dur,
+    }
+
+
+def compare_evals(report_a: dict[str, Any], report_b: dict[str, Any]) -> dict[str, Any]:
+    """Compare two eval reports (A/B) and produce a structured comparison.
+
+    Parameters
+    ----------
+    report_a, report_b:
+        Reports returned by :func:`run_eval`.
+
+    Returns
+    -------
+    dict with keys:
+        target_a, target_b, suite, metrics_a, metrics_b,
+        case_diffs, changed_cases, verdict
+    """
+    m_a = _report_metrics(report_a)
+    m_b = _report_metrics(report_b)
+
+    # Per-case diff
+    cases_a = {c["id"]: c for c in (report_a.get("cases") or [])}
+    cases_b = {c["id"]: c for c in (report_b.get("cases") or [])}
+    all_ids = sorted(set(cases_a) | set(cases_b))
+
+    case_diffs: list[dict[str, Any]] = []
+    for cid in all_ids:
+        ca = cases_a.get(cid)
+        cb = cases_b.get(cid)
+        status_a = ca["status"] if ca else "missing"
+        status_b = cb["status"] if cb else "missing"
+        case_diffs.append(
+            {
+                "id": cid,
+                "name": (ca or cb or {}).get("name", ""),
+                "status_a": status_a,
+                "status_b": status_b,
+                "changed": status_a != status_b,
+            }
+        )
+
+    # Verdict: prefer higher pass_rate; tie-break on lower avg_tokens
+    if m_b["pass_rate"] > m_a["pass_rate"]:
+        verdict = "b"
+    elif m_a["pass_rate"] > m_b["pass_rate"]:
+        verdict = "a"
+    elif m_a["avg_tokens"] <= m_b["avg_tokens"]:
+        verdict = "a"
+    else:
+        verdict = "b"
+
+    return {
+        "target_a": report_a.get("target", ""),
+        "target_b": report_b.get("target", ""),
+        "suite": report_a.get("suite", report_b.get("suite", "")),
+        "metrics_a": m_a,
+        "metrics_b": m_b,
+        "case_diffs": case_diffs,
+        "changed_cases": [d for d in case_diffs if d["changed"]],
+        "verdict": verdict,
+    }

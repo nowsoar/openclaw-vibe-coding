@@ -3483,5 +3483,175 @@ def eval_run(
         raise typer.Exit(1)
 
 
+@eval_app.command("compare")
+def eval_compare(
+    a: str = typer.Option(..., "--a", help="First target, e.g. 'my-skill@v0.1.0'."),
+    b: str = typer.Option(..., "--b", help="Second target, e.g. 'my-skill@v0.2.0'."),
+    suite: str = typer.Option(..., "--suite", "-s", help="Test suite name."),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override LLM model."),
+    ci: bool = typer.Option(
+        False, "--ci",
+        help="CI mode: exit 1 when the better target still has failures.",
+    ),
+) -> None:
+    """A/B compare two skill versions on the same test suite."""
+    _require_init()
+
+    # Validate suite
+    try:
+        _eval_mod.load_suite(suite)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    # Load both targets
+    def _load_target(ref: str) -> tuple[str, dict, object]:
+        name, version = _parse_name_version(ref)
+        try:
+            data = _skill_mod.load_skill(name, version)
+        except FileNotFoundError as exc:
+            console.print(f"[red]✗ {exc}[/red]")
+            raise typer.Exit(1)
+        actual_ver = data.get("version", "?")
+        label = f"{name}@{actual_ver}"
+        try:
+            rendered = _skill_mod.render_skill_prompt(name, version)
+        except Exception as exc:
+            console.print(f"[red]✗ Failed to render skill '{ref}': {exc}[/red]")
+            raise typer.Exit(1)
+        return label, data, rendered
+
+    label_a, data_a, rendered_a = _load_target(a)
+    label_b, data_b, rendered_b = _load_target(b)
+
+    # Build LLM config
+    cfg = read_config()
+    llm_config = LLMConfig.from_harness_config(cfg, overrides={"model": model} if model else {})
+    if not llm_config.api_key:
+        console.print(
+            "[red]✗ No API key found.[/red] "
+            "Set [bold]OPENAI_API_KEY[/bold] or configure [cyan].harness/config.yaml[/cyan]."
+        )
+        raise typer.Exit(1)
+
+    def _make_invoke(skill_data: dict, rendered: object) -> object:
+        def _invoke(inputs: dict) -> tuple[str, int, int, float]:
+            vars_dict: dict[str, str] = {k: str(v) for k, v in inputs.items()}
+            for inp in skill_data.get("inputs") or []:
+                iname = inp.get("name")
+                if iname and iname not in vars_dict and inp.get("default") is not None:
+                    vars_dict[iname] = str(inp["default"])
+            msgs = build_messages(skill_data, rendered, vars_dict)
+            resp = call_llm(msgs, llm_config, stream=False)
+            return resp.content, resp.input_tokens, resp.output_tokens, resp.duration
+        return _invoke
+
+    invoke_a = _make_invoke(data_a, rendered_a)
+    invoke_b = _make_invoke(data_b, rendered_b)
+
+    suite_data = _eval_mod.load_suite(suite)
+    total_cases = len(suite_data.get("cases") or [])
+
+    console.print(
+        f"\n[bold cyan]A/B Compare[/bold cyan]  suite=[bold]{suite}[/bold]  cases={total_cases}\n"
+        f"  [bold]A:[/bold] {label_a}\n"
+        f"  [bold]B:[/bold] {label_b}\n"
+    )
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task_a = progress.add_task(f"Running A ({label_a})…", total=total_cases)
+        try:
+            report_a = _eval_mod.run_eval(target=label_a, suite_name=suite, invoke_fn=invoke_a)
+        except Exception as e:
+            console.print(f"[red]✗ Eval A failed: {e}[/red]")
+            raise typer.Exit(1)
+        progress.update(task_a, completed=total_cases)
+
+        task_b = progress.add_task(f"Running B ({label_b})…", total=total_cases)
+        try:
+            report_b = _eval_mod.run_eval(target=label_b, suite_name=suite, invoke_fn=invoke_b)
+        except Exception as e:
+            console.print(f"[red]✗ Eval B failed: {e}[/red]")
+            raise typer.Exit(1)
+        progress.update(task_b, completed=total_cases)
+
+    comparison = _eval_mod.compare_evals(report_a, report_b)
+    m_a = comparison["metrics_a"]
+    m_b = comparison["metrics_b"]
+
+    # ── Metrics comparison table ──────────────────────────────────────────────
+    def _delta(va: float, vb: float, higher_better: bool = True) -> str:
+        diff = vb - va
+        if diff == 0:
+            return "[dim]±0[/dim]"
+        better = diff > 0 if higher_better else diff < 0
+        arrow = "▲" if diff > 0 else "▼"
+        color = "green" if better else "red"
+        return f"[{color}]{arrow}{abs(diff):.3g}[/{color}]"
+
+    tbl = Table(title="Metrics Comparison", show_lines=True)
+    tbl.add_column("Metric", style="bold")
+    tbl.add_column(f"A: {label_a}", justify="right")
+    tbl.add_column(f"B: {label_b}", justify="right")
+    tbl.add_column("Change (B vs A)", justify="right")
+
+    def _pass_str(m: dict) -> str:
+        color = "green" if m["failed"] == 0 else "red"
+        pct = f"{m['pass_rate']*100:.1f}%"
+        return f"[{color}]{m['passed']}/{m['total']} ({pct})[/{color}]"
+
+    tbl.add_row("Pass rate", _pass_str(m_a), _pass_str(m_b),
+                _delta(m_a["pass_rate"], m_b["pass_rate"]))
+    tbl.add_row("Avg tokens", f"{m_a['avg_tokens']:.1f}", f"{m_b['avg_tokens']:.1f}",
+                _delta(m_a["avg_tokens"], m_b["avg_tokens"], higher_better=False))
+    tbl.add_row("Total tokens", str(m_a["total_tokens"]), str(m_b["total_tokens"]),
+                _delta(m_a["total_tokens"], m_b["total_tokens"], higher_better=False))
+    tbl.add_row("Avg duration", f"{m_a['avg_duration']:.3f}s", f"{m_b['avg_duration']:.3f}s",
+                _delta(m_a["avg_duration"], m_b["avg_duration"], higher_better=False))
+    console.print(tbl)
+
+    # ── Per-case diff table ───────────────────────────────────────────────────
+    changed = comparison["changed_cases"]
+    if changed:
+        ctbl = Table(title="Changed Cases", show_lines=False)
+        ctbl.add_column("ID", style="cyan")
+        ctbl.add_column("Name")
+        ctbl.add_column("A", justify="center")
+        ctbl.add_column("B", justify="center")
+
+        def _status_cell(s: str) -> str:
+            if s == "passed":
+                return "[green]✓ passed[/green]"
+            if s == "failed":
+                return "[red]✗ failed[/red]"
+            if s == "error":
+                return "[yellow]! error[/yellow]"
+            return f"[dim]{s}[/dim]"
+
+        for d in changed:
+            ctbl.add_row(d["id"], d["name"], _status_cell(d["status_a"]), _status_cell(d["status_b"]))
+        console.print(ctbl)
+    else:
+        console.print("[dim]No case status changes between A and B.[/dim]")
+
+    # ── Verdict ───────────────────────────────────────────────────────────────
+    winner_label = label_a if comparison["verdict"] == "a" else label_b
+    loser_label = label_b if comparison["verdict"] == "a" else label_a
+    console.print(
+        f"\n[bold]Recommendation:[/bold] "
+        f"[green]{winner_label}[/green] is better "
+        f"(higher pass rate or fewer tokens than [dim]{loser_label}[/dim])."
+    )
+
+    if ci and (m_a["failed"] > 0 or m_b["failed"] > 0):
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     main()

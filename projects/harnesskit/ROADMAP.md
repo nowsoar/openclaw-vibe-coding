@@ -838,7 +838,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 5.4：A/B 对比
+### Phase 5.4：A/B 对比 ✅
 **任务**：
 1. 实现 `harnesskit eval compare --a skill@v1 --b skill@v2 --suite suite-name`
    - 两个版本跑同一个测试集
