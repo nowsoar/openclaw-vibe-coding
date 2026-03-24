@@ -1082,6 +1082,104 @@ harnesskit harness run my-code-review --no-memory --var code="..."
 
 ---
 
+### `harnesskit agent` — Interactive AI Agent (Phase 3.4)
+
+An **Agent** binds a Harness to a persistent identity, enabling multi-turn interactive conversations in a REPL interface. Agents are stored as simple YAML files (no versioning — latest definition always wins).
+
+#### Create an Agent
+
+```bash
+# Minimal: link to an existing harness
+harnesskit agent create code-assistant --harness my-code-review
+
+# Full options
+harnesskit agent create code-assistant \
+  --harness my-code-review \
+  --identity-name "代码助手" \
+  --description "帮助你审查和改进代码" \
+  --memory-scope harness \   # session | harness | global
+  --persist \                # persist memory across sessions
+  --max-iterations 20        # max conversation turns per session
+```
+
+Agent YAML format (`.harness/agents/{name}.yaml`):
+
+```yaml
+name: code-assistant
+harness: my-code-review@v0.1.0
+identity:
+  name: "代码助手"
+  description: "帮助你审查和改进代码"
+memory:
+  scope: harness   # session | harness | global
+  persist: true
+max_iterations: 10
+```
+
+#### Run — Interactive REPL
+
+```bash
+harnesskit agent run code-assistant
+```
+
+This starts a REPL conversation:
+
+```
+╔══ Agent: 代码助手 ══
+帮助你审查和改进代码
+Harness: my-code-review | Model: gpt-4o | Memory: harness
+Commands: /reset  /save  /quit
+╚══════════════════════════════
+
+You: 帮我看看这段 Python 代码有什么问题...
+
+代码助手:
+[AI response...]
+  50↑ 120↓ tokens | 2.35s
+
+You: /save
+✓ Conversation saved to .harness/memory/conversations/code-assistant-20260324T103045.json
+
+You: /quit
+Goodbye!
+```
+
+**REPL commands:**
+
+| Command | Description |
+|---|---|
+| `/reset` | Clear memory for this session |
+| `/save` | Save conversation to `.harness/memory/conversations/` |
+| `/save <path>` | Save conversation to a specific file |
+| `/quit` or `/q` | Exit the REPL |
+
+**Options:**
+
+```bash
+# Stream output token-by-token
+harnesskit agent run code-assistant --stream
+
+# Override model
+harnesskit agent run code-assistant --model gpt-4-turbo
+
+# Disable memory for this session
+harnesskit agent run code-assistant --no-memory
+```
+
+#### Other commands
+
+```bash
+harnesskit agent list            # table of all agents
+harnesskit agent show <name>     # show agent definition
+harnesskit agent delete <name>   # delete agent (--yes to skip prompt)
+```
+
+**Memory persistence in agents:**
+
+When `memory.scope` is `harness` or `global` **and** `memory.persist: true`, each assistant turn is automatically written to disk after the response. This means you can interrupt the session and resume later — memory carries over. With `scope: session` (default), memory is cleared when the REPL exits.
+
+---
+
 | Command | Description |
 |---|---|
 | `harnesskit init` | Initialize workspace |
@@ -1140,6 +1238,13 @@ harnesskit harness run my-code-review --no-memory --var code="..."
 | `harnesskit memory list` | List all persisted memory files |
 | `harnesskit memory search <name> <keyword>` | Search conversation history |
 | `harnesskit memory clear <name> --yes` | Clear memory for a harness |
+| `harnesskit agent create <name> --harness <h>` | Create an interactive agent |
+| `harnesskit agent run <name>` | Start interactive REPL conversation |
+| `harnesskit agent run <name> --stream` | Stream agent output |
+| `harnesskit agent run <name> --no-memory` | Run without persisting memory |
+| `harnesskit agent list` | List all agents |
+| `harnesskit agent show <name>` | Show agent definition |
+| `harnesskit agent delete <name> --yes` | Delete an agent |
 
 Use `--help` on any command for full option details:
 

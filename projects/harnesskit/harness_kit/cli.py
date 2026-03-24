@@ -28,6 +28,8 @@ from harness_kit import skill as _skill_mod
 from harness_kit import harness as _harness_mod
 from harness_kit import call_logger as _call_logger_mod
 from harness_kit import memory as _memory_mod
+from harness_kit import agent as _agent_mod
+from harness_kit.llm import LLMConfig, build_messages, call_llm
 
 app = typer.Typer(
     name="harnesskit",
@@ -92,6 +94,13 @@ app.add_typer(harness_app, name="harness")
 
 memory_app = typer.Typer(help="Manage harness conversation memory.", no_args_is_help=True)
 app.add_typer(memory_app, name="memory")
+
+# ---------------------------------------------------------------------------
+# agent sub-app
+# ---------------------------------------------------------------------------
+
+agent_app = typer.Typer(help="Manage AI agents (interactive conversation).", no_args_is_help=True)
+app.add_typer(agent_app, name="agent")
 
 
 def _require_init() -> None:
@@ -2309,6 +2318,356 @@ def memory_clear(
         console.print(f"[green]✓ Memory cleared for [bold]{harness_name}[/bold].[/green]")
     else:
         console.print(f"[dim]No memory file found for [bold]{harness_name}[/bold].[/dim]")
+
+
+
+# ---------------------------------------------------------------------------
+# agent commands
+# ---------------------------------------------------------------------------
+
+
+@agent_app.command("create")
+def agent_create(
+    name: str = typer.Argument(..., help="Agent name."),
+    harness_ref: str = typer.Option(..., "--harness", "-H", help="Harness name or name@version."),
+    identity_name: str = typer.Option("", "--identity-name", help="Display name for the agent."),
+    identity_description: str = typer.Option("", "--description", "-d", help="Agent description."),
+    memory_scope: str = typer.Option(
+        "session", "--memory-scope",
+        help="Memory scope: session / harness / global.",
+    ),
+    memory_persist: bool = typer.Option(False, "--persist", help="Persist memory across runs."),
+    max_iterations: int = typer.Option(10, "--max-iterations", help="Max conversation turns."),
+) -> None:
+    """Create (or overwrite) an agent definition."""
+    _require_init()
+
+    # Validate harness ref exists
+    if "@" in harness_ref:
+        h_name, h_version = harness_ref.split("@", 1)
+    else:
+        h_name, h_version = harness_ref, None
+
+    try:
+        _harness_mod.load_harness(h_name, h_version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    is_new = _agent_mod.save_agent(
+        name=name,
+        harness_ref=harness_ref,
+        identity_name=identity_name,
+        identity_description=identity_description,
+        memory_scope=memory_scope,
+        memory_persist=memory_persist,
+        max_iterations=max_iterations,
+    )
+    action = "Created" if is_new else "Updated"
+    console.print(f"[green]✓ {action} agent [bold]{name}[/bold][/green]")
+    console.print(f"  [dim]harness:[/dim] {harness_ref}")
+    console.print(f"  [dim]memory scope:[/dim] {memory_scope} | [dim]persist:[/dim] {memory_persist}")
+    console.print(f"  [dim]max_iterations:[/dim] {max_iterations}")
+
+
+@agent_app.command("list")
+def agent_list() -> None:
+    """List all agents."""
+    _require_init()
+    agents = _agent_mod.list_agents()
+    if not agents:
+        console.print("[dim]No agents found.[/dim]")
+        return
+
+    table = Table(title="Agents", show_lines=False)
+    table.add_column("Name", style="cyan bold")
+    table.add_column("Harness", style="green")
+    table.add_column("Identity")
+    table.add_column("Memory Scope", style="dim")
+    table.add_column("Max Iters", justify="right")
+
+    for ag in agents:
+        identity = ag.get("identity") or {}
+        table.add_row(
+            ag.get("name", ""),
+            ag.get("harness", ""),
+            identity.get("name", ""),
+            (ag.get("memory") or {}).get("scope", "session"),
+            str(ag.get("max_iterations", 10)),
+        )
+    console.print(table)
+
+
+@agent_app.command("show")
+def agent_show(
+    name: str = typer.Argument(..., help="Agent name."),
+) -> None:
+    """Show full agent definition."""
+    _require_init()
+    try:
+        data = _agent_mod.load_agent(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold cyan]Agent:[/bold cyan] [bold]{data['name']}[/bold]")
+    identity = data.get("identity") or {}
+    if identity.get("name"):
+        console.print(f"  [dim]Display name:[/dim] {identity['name']}")
+    if identity.get("description"):
+        console.print(f"  [dim]Description:[/dim]  {identity['description']}")
+    console.print(f"  [dim]Harness:[/dim]      {data.get('harness', '')}")
+    mem = data.get("memory") or {}
+    console.print(
+        f"  [dim]Memory:[/dim]       scope={mem.get('scope', 'session')} "
+        f"persist={mem.get('persist', False)}"
+    )
+    console.print(f"  [dim]Max iterations:[/dim] {data.get('max_iterations', 10)}")
+
+
+@agent_app.command("delete")
+def agent_delete(
+    name: str = typer.Argument(..., help="Agent name."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Delete an agent definition."""
+    _require_init()
+    if not yes:
+        confirmed = typer.confirm(f"Delete agent '{name}'?")
+        if not confirmed:
+            console.print("[dim]Aborted.[/dim]")
+            raise typer.Exit(0)
+    try:
+        _agent_mod.delete_agent(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]✓ Deleted agent [bold]{name}[/bold].[/green]")
+
+
+@agent_app.command("run")
+def agent_run(
+    name: str = typer.Argument(..., help="Agent name."),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override model."),
+    stream: bool = typer.Option(False, "--stream", help="Stream output token-by-token."),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Disable memory for this session."),
+) -> None:
+    """Start an interactive conversation with an agent (REPL).
+
+    Special commands:
+      /reset   — clear conversation memory
+      /save    — save conversation to a file
+      /quit    — exit
+    """
+    _require_init()
+
+    # Load agent definition
+    try:
+        agent_data = _agent_mod.load_agent(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    harness_ref = agent_data.get("harness", "")
+    if not harness_ref:
+        console.print("[red]✗ Agent has no harness defined.[/red]")
+        raise typer.Exit(1)
+
+    identity = agent_data.get("identity") or {}
+    display_name = identity.get("name") or name
+    description = identity.get("description", "")
+    max_iterations = int(agent_data.get("max_iterations", 10))
+
+    # Parse harness ref
+    if "@" in harness_ref:
+        h_name, h_version = harness_ref.split("@", 1)
+    else:
+        h_name, h_version = harness_ref, None
+
+    # Load harness
+    try:
+        harness_data = _harness_mod.load_harness(h_name, h_version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    # Determine memory scope
+    agent_mem_cfg = agent_data.get("memory") or {}
+    mem_scope = agent_mem_cfg.get("scope", "session")
+    if no_memory:
+        mem_scope = "session"
+
+    # Harness model config
+    harness_model_cfg = harness_data.get("model") or {}
+    harness_overrides: dict = {}
+    if harness_model_cfg.get("name"):
+        harness_overrides["model"] = harness_model_cfg["name"]
+    if harness_model_cfg.get("temperature") is not None:
+        harness_overrides["temperature"] = harness_model_cfg["temperature"]
+    if harness_model_cfg.get("max_tokens"):
+        harness_overrides["max_tokens"] = harness_model_cfg["max_tokens"]
+    if model:
+        harness_overrides["model"] = model
+
+    cfg = read_config()
+    llm_config = LLMConfig.from_harness_config(cfg, overrides=harness_overrides)
+
+    if not llm_config.api_key:
+        console.print(
+            "[red]✗ No API key found.[/red] "
+            "Set [bold]OPENAI_API_KEY[/bold] or configure [cyan].harness/config.yaml[/cyan]."
+        )
+        raise typer.Exit(1)
+
+    # Determine system prompt from harness skills
+    skills_refs = harness_data.get("skills") or []
+    system_prompt_parts: list[str] = []
+    soft_rules_text: list[str] = []
+
+    if skills_refs:
+        # Pick the first skill as the "primary" skill for the session system prompt
+        primary_ref = str(skills_refs[0])
+        s_name, s_version = _harness_mod._parse_skill_ref(primary_ref)
+        try:
+            skill_data = _skill_mod.load_skill(s_name, s_version)
+            rendered = _skill_mod.render_skill_prompt(s_name, s_version)
+            if rendered.get("system"):
+                system_prompt_parts.append(rendered["system"])
+            # Collect soft rules for injection
+            for rtext in (rendered.get("rules") or []):
+                if rtext:
+                    soft_rules_text.append(rtext)
+        except Exception:
+            pass  # skills are optional for agent conversation
+
+    # Build persistent system prompt
+    base_system = "\n\n".join(system_prompt_parts) if system_prompt_parts else (
+        f"你是 {display_name}。" + (f" {description}" if description else "")
+    )
+    if soft_rules_text:
+        base_system += "\n\n规则：\n" + "\n".join(soft_rules_text)
+
+    # Load memory
+    mem_max_turns = int((harness_data.get("memory") or {}).get("max_turns", max_iterations))
+    mem_data = _memory_mod.load_memory(mem_scope, name)
+
+    # Welcome banner
+    console.print(f"\n[bold cyan]╔══ Agent: {display_name} ══[/bold cyan]")
+    if description:
+        console.print(f"[dim]{description}[/dim]")
+    console.print(
+        f"[dim]Harness: {harness_ref} | Model: {llm_config.model} | "
+        f"Memory: {mem_scope}[/dim]"
+    )
+    console.print("[dim]Commands: /reset  /save  /quit[/dim]")
+    console.print("[bold cyan]╚══════════════════════════════[/bold cyan]\n")
+
+    harness_constraints = harness_data.get("constraints") or {}
+    harness_rules = harness_constraints.get("rules") or []
+
+    turn_count = 0
+
+    while True:
+        # Read user input
+        try:
+            user_input = console.input("[bold blue]You:[/bold blue] ")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Interrupted. Goodbye![/dim]")
+            break
+
+        user_input = user_input.strip()
+        if not user_input:
+            continue
+
+        # Handle special commands
+        if user_input.lower() in ("/quit", "/exit", "/q"):
+            console.print("[dim]Goodbye![/dim]")
+            break
+
+        if user_input.lower() == "/reset":
+            mem_data = _memory_mod.load_memory("session", name)  # fresh empty memory
+            if mem_scope != "session":
+                _memory_mod.clear_memory(mem_scope, name)
+            console.print("[green]✓ Memory reset.[/green]\n")
+            turn_count = 0
+            continue
+
+        if user_input.lower() == "/save":
+            saved_path = _agent_mod.save_conversation(name, mem_data)
+            console.print(f"[green]✓ Conversation saved to [bold]{saved_path}[/bold][/green]\n")
+            continue
+
+        if user_input.lower().startswith("/save "):
+            import os
+            target = Path(user_input[6:].strip()).expanduser()
+            saved_path = _agent_mod.save_conversation(name, mem_data, output_path=target)
+            console.print(f"[green]✓ Conversation saved to [bold]{saved_path}[/bold][/green]\n")
+            continue
+
+        # Check max_iterations
+        if turn_count >= max_iterations:
+            console.print(
+                f"[yellow]⚠ Max iterations ({max_iterations}) reached. "
+                f"Use /reset to start a new conversation.[/yellow]"
+            )
+            continue
+
+        # Compress memory if needed
+        _memory_mod.compress_memory(mem_data, mem_max_turns, llm_config)
+
+        # Build messages for this turn
+        history = _memory_mod.get_history_messages(mem_data)
+        messages: list[dict] = []
+        if base_system:
+            messages.append({"role": "system", "content": base_system})
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_input})
+
+        # Call LLM
+        output_content = ""
+        try:
+            if stream:
+                console.print("\n[bold green]Agent:[/bold green] ", end="")
+                chunks: list[str] = []
+                for chunk in call_llm(messages, llm_config, stream=True):
+                    console.print(chunk, end="", highlight=False)
+                    chunks.append(chunk)
+                console.print()
+                output_content = "".join(chunks)
+                in_tokens = out_tokens = 0
+            else:
+                resp = call_llm(messages, llm_config, stream=False)
+                output_content = resp.content
+                in_tokens = resp.input_tokens
+                out_tokens = resp.output_tokens
+                console.print(f"\n[bold green]{display_name}:[/bold green]")
+                console.print(output_content)
+                console.print(
+                    f"[dim]  {in_tokens}↑ {out_tokens}↓ tokens | {resp.duration:.2f}s[/dim]\n"
+                )
+        except Exception as e:
+            console.print(f"[red]✗ LLM call failed: {e}[/red]\n")
+            continue
+
+        # Apply hard rules (harness-level)
+        for rname in harness_rules:
+            try:
+                check_result = _rule_mod.check_rule_by_name(str(rname), output_content)
+                if check_result.triggered and check_result.rule_type == "hard":
+                    console.print(
+                        f"[yellow]⚠ Hard rule violated: {rname}. "
+                        f"{check_result.fix_hint or ''}[/yellow]"
+                    )
+            except Exception:
+                pass
+
+        # Update memory
+        _memory_mod.add_turn(mem_data, "user", user_input, tokens=in_tokens if not stream else 0)
+        _memory_mod.add_turn(mem_data, "assistant", output_content, tokens=out_tokens if not stream else 0)
+        if mem_scope != "session":
+            _memory_mod.save_memory(mem_data, mem_scope, name)
+
+        turn_count += 1
 
 
 @app.command()
