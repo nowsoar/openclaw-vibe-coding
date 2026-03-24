@@ -707,11 +707,11 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 4.6：Blueprint 运行与调试
+### Phase 4.6：Blueprint 运行与调试 ✅
 **任务**：
 1. 实现 `harnesskit blueprint run <name>`
    - 按顺序执行所有步骤
-   - 实时显示进度
+   - 实时显示进度（Rich Progress spinner，每步开始/完成即时刷新）
    - 生成执行报告
 
 2. 调试模式
@@ -724,9 +724,9 @@ Blueprint（工作流编排）
    - 保存到 `.harness/logs/blueprints/{name}-{timestamp}.json`
 
 **验收标准**：
-- 能成功运行完整的 Blueprint
-- 调试工具实用
-- 执行报告清晰
+- ✅ 能成功运行完整的 Blueprint
+- ✅ 调试工具实用（--dry-run / --step / --verbose 全部可用）
+- ✅ 执行报告清晰（summary + per-step detail + outputs 保存至日志目录）
 
 ---
 

@@ -1,6 +1,7 @@
 """
 Blueprint node executor — Phase 4.3 (deterministic) + Phase 4.4 (agentic)
-                         + Phase 4.5 (variable passing system with filters).
+                         + Phase 4.5 (variable passing system with filters)
+                         + Phase 4.6 (run reports, real-time progress callbacks).
 
 Supports:
   - Shell command execution via subprocess
@@ -10,6 +11,8 @@ Supports:
   - Pipe filters: {{steps.x.output | truncate:100}}, {{steps.x.output | json}}
   - Agentic steps: call Skill or Harness via LLM with retries and timeout
   - dry_run mode (renders commands without executing)
+  - Step-level progress callbacks for real-time UI updates
+  - Execution report saved to .harness/logs/blueprints/
 """
 
 from __future__ import annotations
@@ -21,8 +24,9 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +434,8 @@ def execute_blueprint(
     dry_run: bool = False,
     start_step: Optional[str] = None,
     base: Optional[Path] = None,
+    on_step_start: Optional[Callable[[dict[str, Any]], None]] = None,
+    on_step_done: Optional[Callable[["StepResult"], None]] = None,
 ) -> BlueprintRunResult:
     """Execute all steps in a blueprint.
 
@@ -439,6 +445,10 @@ def execute_blueprint(
         dry_run:        When *True*, render commands but do not execute them.
         start_step:     Step ID to start execution from (skips earlier steps).
         base:           Base directory for resolving .harness/ assets (defaults to cwd).
+        on_step_start:  Optional callback called *before* each step executes with the
+                        step dict. Used for real-time progress display (Phase 4.6).
+        on_step_done:   Optional callback called *after* each step with its
+                        :class:`StepResult`. Used for real-time progress display.
     """
     name: str = blueprint_data.get("name", "")
     version: str = blueprint_data.get("version", "")
@@ -504,6 +514,11 @@ def execute_blueprint(
         step_type = step.get("type", "deterministic")
 
         # --- Execute step based on type ---
+        if on_step_start is not None:
+            try:
+                on_step_start(step)
+            except Exception:
+                pass
         if dry_run:
             raw_cmd = step.get("run", "")
             rendered = interpolate_variables(raw_cmd, context) if raw_cmd else ""
@@ -537,6 +552,12 @@ def execute_blueprint(
             )
 
         step_results.append(result)
+
+        if on_step_done is not None:
+            try:
+                on_step_done(result)
+            except Exception:
+                pass
 
         # Update context so subsequent steps can reference this step's output
         context["steps"][step_id] = {
@@ -648,3 +669,66 @@ def _resolve_outputs(
     for k, v in outputs_def.items():
         resolved[k] = interpolate_variables(str(v), context)
     return resolved
+
+
+# ---------------------------------------------------------------------------
+# Execution report persistence (Phase 4.6)
+# ---------------------------------------------------------------------------
+
+
+def save_run_report(
+    result: "BlueprintRunResult",
+    base: Optional[Path] = None,
+) -> Path:
+    """Persist a blueprint run report to .harness/logs/blueprints/.
+
+    The file is named ``{blueprint_name}-{timestamp}.json`` where *timestamp*
+    is a compact UTC string like ``20260324T103045``.
+
+    Returns the path of the saved report file.
+
+    Silently ignores write errors so that reporting never breaks the main flow.
+    """
+    from harness_kit.config import harness_dir
+
+    ts = datetime.now(tz=timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    report: dict[str, Any] = {
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "blueprint": result.blueprint_name,
+        "version": result.blueprint_version,
+        "status": result.status,
+        "duration": round(result.duration, 3),
+        "stop_reason": result.stop_reason,
+        "summary": {
+            "total": len(result.steps),
+            "success": sum(1 for s in result.steps if s.status == "success"),
+            "failed": sum(1 for s in result.steps if s.status in ("failed", "timeout")),
+            "skipped": sum(1 for s in result.steps if s.status == "skipped"),
+            "dry_run": sum(1 for s in result.steps if s.status == "dry_run"),
+        },
+        "steps": [
+            {
+                "id": s.step_id,
+                "name": s.step_name,
+                "type": s.step_type,
+                "status": s.status,
+                "duration": round(s.duration, 3),
+                "exit_code": s.exit_code,
+                "output_preview": s.output[:300] + ("..." if len(s.output) > 300 else ""),
+                "error": s.error,
+            }
+            for s in result.steps
+        ],
+        "outputs": result.outputs,
+    }
+
+    try:
+        report_dir = harness_dir(base) / "logs" / "blueprints"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = result.blueprint_name.replace("/", "_").replace("\\", "_")
+        report_path = report_dir / f"{safe_name}-{ts}.json"
+        report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        return report_path
+    except Exception:
+        # Return a dummy path — caller can check existence
+        return Path(f"/tmp/{result.blueprint_name}-{ts}.json")

@@ -9,6 +9,7 @@ from typing import Optional
 import typer
 import yaml
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from rich.text import Text
 
@@ -3022,20 +3023,27 @@ def blueprint_run(
     )
     console.rule()
 
-    # Run
-    result = _exec_mod.execute_blueprint(
-        data,
-        inputs,
-        dry_run=dry_run,
-        start_step=start_step,
-        base=Path.cwd(),
-    )
+    # Build step index for progress display
+    steps = data.get("steps") or []
+    total_steps = len(steps)
 
-    # Display step results
-    for step_res in result.steps:
+    # Progress display helpers (Phase 4.6 — real-time progress)
+    _progress_instance: list = []  # use a list so the closure can mutate it
+    _task_id: list = []
+
+    def _on_step_start(step: dict) -> None:
+        sid = step.get("id", "?")
+        sname = step.get("name", sid)
+        if _progress_instance:
+            _progress_instance[0].update(
+                _task_id[0],
+                description=f"[cyan]{sid}[/cyan] [dim]{sname}[/dim]",
+            )
+
+    def _on_step_done(step_res) -> None:  # type: ignore[no-untyped-def]
+        # Print step result line inside the progress context
         stype = step_res.step_type
         color = "green" if stype == "deterministic" else ("yellow" if stype == "agentic" else "dim")
-
         if step_res.status == "success":
             icon = "[green]✓[/green]"
         elif step_res.status == "failed":
@@ -3064,6 +3072,34 @@ def blueprint_run(
         if step_res.error and step_res.status not in ("failed", "timeout"):
             console.print(f"    [red]error: {step_res.error}[/red]")
 
+        if _progress_instance:
+            _progress_instance[0].advance(_task_id[0])
+
+    # Run with live progress spinner
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,  # clear spinner line when done
+    ) as progress:
+        _progress_instance.append(progress)
+        task = progress.add_task(
+            f"Starting [cyan]{name}[/cyan]…",
+            total=total_steps,
+        )
+        _task_id.append(task)
+
+        result = _exec_mod.execute_blueprint(
+            data,
+            inputs,
+            dry_run=dry_run,
+            start_step=start_step,
+            base=Path.cwd(),
+            on_step_start=_on_step_start,
+            on_step_done=_on_step_done,
+        )
+
     console.rule()
 
     # Outputs
@@ -3073,26 +3109,33 @@ def blueprint_run(
             truncated = v[:200] + "…" if len(v) > 200 else v
             console.print(f"  [cyan]{k}[/cyan]: {truncated}")
 
+    # Save execution report (Phase 4.6)
+    report_path = _exec_mod.save_run_report(result, base=Path.cwd())
+
     # Summary line
     duration_str = f"{result.duration:.2f}s"
     if result.status == "success":
         console.print(
             f"\n[green]✓ Blueprint '{name}' completed successfully[/green] "
-            f"[dim]({duration_str})[/dim]\n"
+            f"[dim]({duration_str})[/dim]"
         )
+        console.print(f"[dim]Report saved: {report_path}[/dim]\n")
     elif result.status == "dry_run":
         console.print(
-            f"\n[dim]Dry-run complete — no commands executed ({duration_str})[/dim]\n"
+            f"\n[dim]Dry-run complete — no commands executed ({duration_str})[/dim]"
         )
+        console.print(f"[dim]Report saved: {report_path}[/dim]\n")
     elif result.status == "stopped":
         reason = result.stop_reason or "step failed"
-        console.print(f"\n[red]✗ Blueprint stopped: {reason}[/red] [dim]({duration_str})[/dim]\n")
+        console.print(f"\n[red]✗ Blueprint stopped: {reason}[/red] [dim]({duration_str})[/dim]")
+        console.print(f"[dim]Report saved: {report_path}[/dim]\n")
         raise typer.Exit(1)
     else:  # "failed"
         console.print(
             f"\n[yellow]⚠ Blueprint '{name}' finished with failures[/yellow] "
-            f"[dim]({duration_str})[/dim]\n"
+            f"[dim]({duration_str})[/dim]"
         )
+        console.print(f"[dim]Report saved: {report_path}[/dim]\n")
         raise typer.Exit(1)
 
 

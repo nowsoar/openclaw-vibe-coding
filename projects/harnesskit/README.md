@@ -1497,7 +1497,7 @@ Blueprint 'my-pipeline@v0.0.1' — Validation Report
 
 ---
 
-### Blueprint Executor — Deterministic & Agentic Steps (Phase 4.3 + 4.4)
+### Blueprint Executor — Deterministic & Agentic Steps (Phase 4.3 + 4.4 + 4.6)
 
 `harnesskit blueprint run` executes a blueprint's steps in order, providing real-time progress output.  Both `type: deterministic` (shell) and `type: agentic` (LLM) steps are fully supported.
 
@@ -1519,6 +1519,8 @@ Blueprint 'my-pipeline@v0.0.1' — Validation Report
 | **`--verbose`** | Print stdout/stderr for every step |
 | **Output resolution** | Blueprint `outputs` block resolved against step results |
 | **Call logging** | Agentic steps log to `.harness/logs/calls.jsonl` |
+| **Execution report** | Each run saves a JSON report to `.harness/logs/blueprints/{name}-{timestamp}.json` |
+| **Real-time progress** | Rich spinner shows the current running step; results are printed as each step completes |
 
 **Example:**
 
@@ -1577,6 +1579,7 @@ Outputs:
   count: 3
 
 ✓ Blueprint 'lint-pipeline' completed successfully (0.36s)
+Report saved: .harness/logs/blueprints/lint-pipeline-20260324T103045123456.json
 ```
 
 **Agentic step example** — mix shell commands with LLM calls:
@@ -1607,6 +1610,40 @@ steps:
 ```bash
 harnesskit blueprint run my-pipeline --var file_path=app.py
 ```
+
+### Execution Reports (Phase 4.6)
+
+Every `harnesskit blueprint run` call automatically saves a JSON report to:
+
+```
+.harness/logs/blueprints/{name}-{timestamp}.json
+```
+
+The report contains per-step duration, status, output preview, and a summary:
+
+```json
+{
+  "timestamp": "2026-03-24T10:30:45.123456+00:00",
+  "blueprint": "lint-pipeline",
+  "version": "v0.0.1",
+  "status": "success",
+  "duration": 0.36,
+  "summary": {
+    "total": 2,
+    "success": 2,
+    "failed": 0,
+    "skipped": 0,
+    "dry_run": 0
+  },
+  "steps": [
+    {"id": "lint", "status": "success", "duration": 0.31, "exit_code": 0, "output_preview": "..."},
+    {"id": "count", "status": "success", "duration": 0.05, "exit_code": 0, "output_preview": "3"}
+  ],
+  "outputs": {"issues": "...", "count": "3"}
+}
+```
+
+Reports are written even when a blueprint fails or is stopped, making them useful for debugging and post-run analysis.
 
 ---
 
