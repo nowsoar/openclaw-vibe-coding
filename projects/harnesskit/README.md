@@ -1180,6 +1180,91 @@ When `memory.scope` is `harness` or `global` **and** `memory.persist: true`, eac
 
 ---
 
+### Phase 3 End-to-End Tutorial
+
+Complete walkthrough from an empty workspace to a running interactive agent:
+
+```bash
+# 1. Initialize workspace
+harnesskit init
+
+# 2. Create a system prompt
+harnesskit prompt save code-reviewer-sys \
+  --content "You are a senior {{language}} engineer. Review the code carefully." \
+  --description "Code reviewer system prompt" \
+  --tags "code,review"
+
+# 3. Create a user prompt
+harnesskit prompt save code-reviewer-user \
+  --content "Please review the following code:\n{{code}}" \
+  --description "Code reviewer user prompt"
+
+# 4. Create a rule
+harnesskit rule add no-speculation \
+  --type hard \
+  --pattern "(I think|I guess|probably|maybe it's)" \
+  --description "No speculative language in reviews" \
+  --fix-hint "State only confirmed issues"
+
+# 5. Save a skill (from YAML file)
+cat > code-reviewer.yaml << 'EOF'
+name: code-reviewer
+description: "Reviews code and reports issues"
+trigger: "When code needs to be reviewed"
+inputs:
+  - name: code
+    type: string
+    required: true
+  - name: language
+    type: string
+    default: python
+outputs:
+  - name: issues
+    type: string
+assets:
+  prompts:
+    system: code-reviewer-sys
+    user: code-reviewer-user
+  rules:
+    - no-speculation
+changelog: "Initial version"
+EOF
+harnesskit skill save --file code-reviewer.yaml
+
+# 6. Create a harness combining the skill with model config
+harnesskit harness create code-review-harness \
+  --description "Full code review harness" \
+  --skills "code-reviewer" \
+  --model gpt-4o \
+  --temperature 0.2 \
+  --memory-scope harness \
+  --max-turns 20 \
+  --context-budget 8000
+
+# 7. Validate all references are intact
+harnesskit harness validate code-review-harness
+
+# 8. Create an interactive agent
+harnesskit agent create code-assistant \
+  --harness code-review-harness \
+  --identity-name "Code Assistant" \
+  --description "Reviews and improves your code"
+
+# 9. Start an interactive conversation
+harnesskit agent run code-assistant
+```
+
+**Best practices for Phase 3:**
+
+- **Keep skills focused**: Each skill should do one thing. Compose complexity in the harness, not in a single monolithic skill.
+- **Version your harnesses**: Every `harness create` auto-increments the version. Use `harness diff` to review changes before deploying.
+- **Use `harness validate` in CI**: Returns exit code `1` on broken references — catches regressions early.
+- **Tune `context_budget`**: Start at 4000 tokens and increase if you see budget warnings. `harness run --dry-run` shows token estimates without making an LLM call.
+- **Use `memory.scope: harness`** for persistent agents. Use `session` for stateless one-shot tasks.
+- **Run the full doctor**: `harnesskit doctor` scans for broken references, missing assets, and stale pointers across your entire workspace.
+
+---
+
 | Command | Description |
 |---|---|
 | `harnesskit init` | Initialize workspace |
@@ -1280,7 +1365,9 @@ pytest
 Run integration tests only:
 
 ```bash
-pytest tests/test_integration.py -v
+pytest tests/test_integration.py -v         # Phase 1 integration
+pytest tests/test_phase2_integration.py -v  # Phase 2 integration
+pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 ```
 
 ---
@@ -1289,4 +1376,4 @@ pytest tests/test_integration.py -v
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 3.3 complete** — Memory 记忆系统: session/harness/global memory scopes with disk persistence, conversation history injection into harness run, auto-compression when max_turns exceeded, and `memory show/list/search/clear` CLI commands. 590 pytest tests passing.
+Current status: **Phase 3.5 complete** — Phase 3 integration, error handling, performance validation, and documentation: complete end-to-end workflow (init → prompt → skill → harness → agent → REPL), 41 Phase 3 integration tests covering the full flow, error handling with clear messages, performance baselines (50 harness saves < 2s, 100 memory turns < 500ms), and Harness/Agent tutorial with best practices. 672 pytest tests passing.
