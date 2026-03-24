@@ -356,7 +356,7 @@ class TestBlueprintCLI:
             yaml.dump(SAMPLE_BLUEPRINT, allow_unicode=True, default_flow_style=False)
         )
         runner.invoke(app, ["blueprint", "create", "code-review-pipeline", "--file", str(yaml_file)])
-        result = runner.invoke(app, ["blueprint", "validate", "code-review-pipeline"])
+        result = runner.invoke(app, ["blueprint", "validate", "code-review-pipeline", "--no-check-assets"])
         assert result.exit_code == 0, result.output
         assert "valid" in result.output.lower()
 
@@ -384,3 +384,241 @@ class TestBlueprintCLI:
         result = runner.invoke(app, ["init"])
         assert result.exit_code == 0
         assert (tmp_path / ".harness" / "blueprints").is_dir()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.2: Enhanced static validation tests
+# ---------------------------------------------------------------------------
+
+
+class TestValidateGotoTargets:
+    def test_valid_goto_target(self) -> None:
+        steps = [
+            {"id": "a", "type": "deterministic", "run": "echo hi", "on_fail": "goto:b"},
+            {"id": "b", "type": "deterministic", "run": "echo bye"},
+        ]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps}
+        errors = bm.validate_goto_targets(data)
+        assert errors == []
+
+    def test_invalid_goto_target(self) -> None:
+        steps = [
+            {"id": "a", "type": "deterministic", "run": "echo hi", "on_fail": "goto:nonexistent"},
+        ]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps}
+        errors = bm.validate_goto_targets(data)
+        assert len(errors) == 1
+        assert "nonexistent" in errors[0]
+        assert "Fix:" in errors[0]
+
+    def test_non_goto_on_fail_not_flagged(self) -> None:
+        steps = [
+            {"id": "a", "type": "deterministic", "run": "echo hi", "on_fail": "stop"},
+        ]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps}
+        errors = bm.validate_goto_targets(data)
+        assert errors == []
+
+    def test_empty_steps_returns_no_errors(self) -> None:
+        data = {**SAMPLE_BLUEPRINT, "steps": []}
+        errors = bm.validate_goto_targets(data)
+        assert errors == []
+
+
+class TestDetectVariableCycles:
+    def test_no_cycle(self) -> None:
+        # A → B → C, no cycle
+        steps = [
+            {"id": "a", "type": "deterministic", "run": "echo hi"},
+            {"id": "b", "type": "deterministic", "run": "echo {{steps.a.output}}"},
+            {"id": "c", "type": "deterministic", "run": "echo {{steps.b.output}}"},
+        ]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.detect_variable_cycles(data)
+        assert errors == []
+
+    def test_direct_cycle(self) -> None:
+        # A uses B's output, B uses A's output → cycle A → B → A
+        steps = [
+            {"id": "a", "type": "deterministic", "run": "echo {{steps.b.output}}"},
+            {"id": "b", "type": "deterministic", "run": "echo {{steps.a.output}}"},
+        ]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.detect_variable_cycles(data)
+        assert len(errors) >= 1
+        assert any("a" in e and "b" in e for e in errors)
+
+    def test_self_reference_is_a_cycle(self) -> None:
+        steps = [
+            {"id": "a", "type": "deterministic", "run": "echo {{steps.a.output}}"},
+        ]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.detect_variable_cycles(data)
+        assert len(errors) >= 1
+
+    def test_sample_blueprint_has_no_cycles(self) -> None:
+        errors = bm.detect_variable_cycles(SAMPLE_BLUEPRINT)
+        assert errors == []
+
+
+class TestValidateAssetRefs:
+    def test_no_agentic_steps_returns_no_errors(self, workspace: Path) -> None:
+        steps = [{"id": "lint", "type": "deterministic", "run": "echo hi"}]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.validate_asset_refs(data, workspace)
+        assert errors == []
+
+    def test_missing_harness_ref_flagged(self, workspace: Path) -> None:
+        steps = [{"id": "r", "type": "agentic", "harness": "missing-harness"}]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.validate_asset_refs(data, workspace)
+        assert len(errors) == 1
+        assert "missing-harness" in errors[0]
+        assert "Fix:" in errors[0]
+
+    def test_missing_skill_ref_flagged(self, workspace: Path) -> None:
+        steps = [{"id": "r", "type": "agentic", "skill": "missing-skill@v0.1.0"}]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.validate_asset_refs(data, workspace)
+        assert len(errors) == 1
+        assert "missing-skill" in errors[0]
+
+    def test_existing_harness_no_error(self, workspace: Path) -> None:
+        from harness_kit import harness as harness_mod
+        # Create a minimal harness
+        harness_mod.save_harness(
+            name="my-harness",
+            description="test",
+            skills=[],
+            base=workspace,
+        )
+        steps = [{"id": "r", "type": "agentic", "harness": "my-harness"}]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.validate_asset_refs(data, workspace)
+        assert errors == []
+
+    def test_existing_skill_no_error(self, workspace: Path) -> None:
+        from harness_kit import skill as skill_mod
+        skill_mod.save_skill(
+            name="my-skill",
+            description="test skill",
+            base=workspace,
+        )
+        steps = [{"id": "r", "type": "agentic", "skill": "my-skill"}]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.validate_asset_refs(data, workspace)
+        assert errors == []
+
+    def test_versioned_missing_harness(self, workspace: Path) -> None:
+        steps = [{"id": "r", "type": "agentic", "harness": "my-harness@v0.9.9"}]
+        data = {**SAMPLE_BLUEPRINT, "steps": steps, "outputs": {}}
+        errors = bm.validate_asset_refs(data, workspace)
+        assert len(errors) == 1
+        assert "v0.9.9" in errors[0]
+
+
+class TestFullValidate:
+    def test_valid_blueprint_no_errors(self, workspace: Path) -> None:
+        results = bm.full_validate(SAMPLE_BLUEPRINT, workspace)
+        # All categories should be present
+        assert "structure" in results
+        assert "variable_refs" in results
+        assert "asset_refs" in results
+        assert "goto_targets" in results
+        assert "variable_cycles" in results
+        # structure, variable_refs, goto_targets, cycles should be clean
+        assert results["structure"] == []
+        assert results["variable_refs"] == []
+        assert results["goto_targets"] == []
+        assert results["variable_cycles"] == []
+        # asset_refs will have errors because harnesses/skills don't exist in workspace
+        # (that's expected for this test)
+
+    def test_returns_all_categories(self, workspace: Path) -> None:
+        results = bm.full_validate({}, workspace)
+        assert set(results.keys()) == {"structure", "variable_refs", "asset_refs", "goto_targets", "variable_cycles"}
+
+
+class TestBlueprintValidateCLIPhase42:
+    def _create_blueprint(self, workspace: Path, tmp_path: Path, data: dict = None) -> None:
+        yaml_file = tmp_path / "bp.yaml"
+        yaml_file.write_text(
+            yaml.dump(data or SAMPLE_BLUEPRINT, allow_unicode=True, default_flow_style=False)
+        )
+        runner.invoke(app, ["blueprint", "create", (data or SAMPLE_BLUEPRINT)["name"], "--file", str(yaml_file)])
+
+    def test_validate_shows_section_headers(self, workspace: Path, tmp_path: Path) -> None:
+        self._create_blueprint(workspace, tmp_path)
+        result = runner.invoke(app, ["blueprint", "validate", "code-review-pipeline"])
+        # Should have section headers in output
+        assert "Structure" in result.output
+        assert "Variable" in result.output
+
+    def test_validate_missing_harness_detected(self, workspace: Path, tmp_path: Path) -> None:
+        bp = {
+            **SAMPLE_BLUEPRINT,
+            "steps": [
+                {"id": "r", "type": "agentic", "harness": "nonexistent-harness"},
+            ],
+            "outputs": {},
+        }
+        self._create_blueprint(workspace, tmp_path, bp)
+        result = runner.invoke(app, ["blueprint", "validate", "code-review-pipeline"])
+        assert result.exit_code != 0
+        assert "nonexistent-harness" in result.output
+
+    def test_validate_invalid_goto_detected(self, workspace: Path, tmp_path: Path) -> None:
+        bp = {
+            **SAMPLE_BLUEPRINT,
+            "steps": [
+                {"id": "lint", "type": "deterministic", "run": "echo hi", "on_fail": "goto:phantom"},
+            ],
+            "outputs": {},
+        }
+        self._create_blueprint(workspace, tmp_path, bp)
+        result = runner.invoke(app, ["blueprint", "validate", "code-review-pipeline"])
+        assert result.exit_code != 0
+        assert "phantom" in result.output
+
+    def test_validate_no_check_assets_flag(self, workspace: Path, tmp_path: Path) -> None:
+        # With --no-check-assets, missing harness/skill refs should NOT cause failure
+        bp = {
+            **SAMPLE_BLUEPRINT,
+            "steps": [
+                {"id": "r", "type": "agentic", "harness": "nonexistent-harness"},
+            ],
+            "outputs": {},
+        }
+        self._create_blueprint(workspace, tmp_path, bp)
+        result = runner.invoke(
+            app, ["blueprint", "validate", "code-review-pipeline", "--no-check-assets"]
+        )
+        # With no-check-assets, asset errors suppressed → should succeed
+        assert result.exit_code == 0
+
+    def test_validate_fix_hint_shown(self, workspace: Path, tmp_path: Path) -> None:
+        bp = {
+            **SAMPLE_BLUEPRINT,
+            "steps": [
+                {"id": "r", "type": "agentic", "skill": "no-such-skill"},
+            ],
+            "outputs": {},
+        }
+        self._create_blueprint(workspace, tmp_path, bp)
+        result = runner.invoke(app, ["blueprint", "validate", "code-review-pipeline"])
+        assert "Fix:" in result.output or "fix" in result.output.lower()
+
+    def test_validate_all_green_shows_no_errors(self, workspace: Path, tmp_path: Path) -> None:
+        # A valid blueprint with no agentic steps → all checks pass
+        bp = {
+            "name": "simple-pipeline",
+            "description": "A simple test pipeline",
+            "steps": [
+                {"id": "lint", "type": "deterministic", "run": "echo hi"},
+            ],
+            "outputs": {},
+        }
+        self._create_blueprint(workspace, tmp_path, bp)
+        result = runner.invoke(app, ["blueprint", "validate", "simple-pipeline"])
+        assert result.exit_code == 0
+        assert "valid" in result.output.lower()

@@ -628,7 +628,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 4.2：Blueprint 验证
+### Phase 4.2：Blueprint 验证 ✅
 **任务**：
 1. 静态验证
    - 检查所有引用的 Harness/Skill 是否存在
@@ -640,8 +640,8 @@ Blueprint（工作流编排）
    - 标记错误位置和修复建议
 
 **验收标准**：
-- 能发现常见的 Blueprint 错误
-- 验证报告清晰可读
+- ✅ 能发现常见的 Blueprint 错误
+- ✅ 验证报告清晰可读
 
 ---
 

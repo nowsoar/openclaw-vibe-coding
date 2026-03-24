@@ -2894,8 +2894,12 @@ def blueprint_diff(
 @blueprint_app.command("validate")
 def blueprint_validate(
     ref: str = typer.Argument(..., help="Blueprint name or name@version."),
+    check_assets: bool = typer.Option(
+        True, "--check-assets/--no-check-assets",
+        help="Verify referenced harnesses and skills exist on disk.",
+    ),
 ) -> None:
-    """Validate a blueprint's structure and variable references."""
+    """Validate a blueprint — structure, variable refs, asset existence, and cycles."""
     _require_init()
     name, version = _parse_name_version(ref)
     try:
@@ -2904,17 +2908,49 @@ def blueprint_validate(
         console.print(f"[red]✗ {e}[/red]")
         raise typer.Exit(1)
 
-    struct_errors = _blueprint_mod._validate_blueprint_data(data)
-    var_errors = _blueprint_mod.validate_variable_refs(data)
-    all_errors = struct_errors + var_errors
+    display_version = version or _blueprint_mod.get_current_version(name)
+    console.print(
+        f"\n[bold]Blueprint '{name}@{display_version}' — Validation Report[/bold]"
+    )
+    console.rule()
 
-    if all_errors:
-        console.print(f"[red]✗ Blueprint '{name}' has {len(all_errors)} error(s):[/red]")
-        for e in all_errors:
-            console.print(f"  • {e}")
+    results = _blueprint_mod.full_validate(data)
+    if not check_assets:
+        results["asset_refs"] = []
+
+    _CAT_LABELS = {
+        "structure": "Structure",
+        "variable_refs": "Variable References",
+        "asset_refs": "Asset References",
+        "goto_targets": "Goto Targets",
+        "variable_cycles": "Variable Cycles",
+    }
+
+    total_errors = 0
+    for cat, cat_errors in results.items():
+        label = _CAT_LABELS.get(cat, cat)
+        if cat_errors:
+            console.print(f"\n[red][{label}] {len(cat_errors)} error(s)[/red]")
+            for err in cat_errors:
+                # Split error and fix hint on "Fix:"
+                if "Fix:" in err:
+                    msg, fix = err.split("Fix:", 1)
+                    console.print(f"  [red]•[/red] {msg.strip()}")
+                    console.print(f"    [dim]Fix:{fix}[/dim]")
+                else:
+                    console.print(f"  [red]•[/red] {err}")
+            total_errors += len(cat_errors)
+        else:
+            console.print(f"\n[green][{label}] ✓ No errors[/green]")
+
+    console.rule()
+    if total_errors:
+        console.print(
+            f"[red]✗ Found {total_errors} error(s). Blueprint is NOT valid.[/red]\n"
+        )
         raise typer.Exit(1)
-
-    console.print(f"[green]✓ Blueprint '{name}' is valid.[/green]")
+    else:
+        console.print(f"[green]✓ Blueprint '{name}' is valid.[/green]\n")
 
 
 # ---------------------------------------------------------------------------

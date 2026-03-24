@@ -1334,7 +1334,7 @@ harnesskit agent run code-assistant
 | `harnesskit blueprint show <name[@ver]>` | Display blueprint definition |
 | `harnesskit blueprint list` | List all blueprints |
 | `harnesskit blueprint diff <a> <b>` | Diff two blueprint versions |
-| `harnesskit blueprint validate <name>` | Validate structure + variable refs |
+| `harnesskit blueprint validate <name>` | Validate structure, refs, assets, goto targets, and cycles |
 | `harnesskit blueprint delete <name[@ver]>` | Delete a blueprint |
 
 Use `--help` on any command for full option details:
@@ -1420,6 +1420,9 @@ harnesskit blueprint diff my-pipeline@v0.0.1 my-pipeline@v0.0.2
 # Validate structure and variable references
 harnesskit blueprint validate my-pipeline
 
+# Validate structure only (skip asset existence checks)
+harnesskit blueprint validate my-pipeline --no-check-assets
+
 # Delete (all versions or a specific one)
 harnesskit blueprint delete my-pipeline --yes
 harnesskit blueprint delete my-pipeline@v0.0.1 --yes
@@ -1432,6 +1435,35 @@ harnesskit blueprint delete my-pipeline@v0.0.1 --yes
     v0.0.1.yaml
     v0.0.2.yaml
     _current          ← plain-text file containing current version
+```
+
+### Blueprint Validation (Phase 4.2)
+
+`harnesskit blueprint validate` runs **five checks** and produces a rich, categorised report:
+
+| Check | What it verifies |
+|---|---|
+| **Structure** | Required fields, valid step types, unique IDs, `on_fail` values, etc. |
+| **Variable References** | All `{{steps.xxx.*}}` and `{{inputs.xxx}}` point to declared step/input IDs |
+| **Asset References** | Referenced harnesses and skills actually exist in `.harness/` |
+| **Goto Targets** | `on_fail: goto:<id>` values reference a declared step ID |
+| **Variable Cycles** | No circular dependencies between step outputs |
+
+Example output:
+
+```
+Blueprint 'my-pipeline@v0.0.1' — Validation Report
+────────────────────────────────────────────────────
+
+[Structure] ✓ No errors
+[Variable References] ✓ No errors
+[Asset References] 1 error(s)
+  • Step 'review': harness 'my-harness@v0.1.0' not found.
+    Fix: run 'harnesskit harness list' to see available harnesses.
+[Goto Targets] ✓ No errors
+[Variable Cycles] ✓ No errors
+────────────────────────────────────────────────────
+✗ Found 1 error(s). Blueprint is NOT valid.
 ```
 
 ---
@@ -1471,4 +1503,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 4.1 complete** — Blueprint YAML format, versioned storage, and CLI commands (`create`, `show`, `list`, `diff`, `validate`, `delete`): supports deterministic + agentic step types, variable interpolation syntax (`{{steps.xxx.output}}`), and structural/reference validation. 43 new pytest tests (715 total) all passing.
+Current status: **Phase 4.2 complete** — Blueprint enhanced static validation: five-category rich report (`blueprint validate`) covering structure, variable references, asset existence (harness/skill on disk), goto target resolution, and circular dependency detection. `--no-check-assets` flag for CI without live assets. 26 new pytest tests (737 total) all passing.

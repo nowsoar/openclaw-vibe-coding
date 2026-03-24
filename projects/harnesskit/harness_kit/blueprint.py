@@ -362,3 +362,183 @@ def validate_variable_refs(data: dict[str, Any]) -> list[str]:
                         f"Variable '{{{{ {inner} }}}}' references unknown input '{iname}'."
                     )
     return errors
+
+
+# ---------------------------------------------------------------------------
+# Phase 4.2: Enhanced static validation
+# ---------------------------------------------------------------------------
+
+
+def _parse_asset_ref(ref: str) -> tuple[str, str | None]:
+    """Parse 'name@version' into (name, version). Version is None if unspecified."""
+    if "@" in ref:
+        name, version = ref.split("@", 1)
+        return name.strip(), version.strip()
+    return ref.strip(), None
+
+
+def validate_asset_refs(data: dict[str, Any], base: Path | None = None) -> list[str]:
+    """Check that all harness/skill references in agentic steps exist on disk.
+
+    Returns a list of error strings (empty = all refs valid).
+    """
+    from harness_kit import harness as harness_mod  # avoid top-level circular import
+    from harness_kit import skill as skill_mod
+
+    errors: list[str] = []
+    steps = data.get("steps") or []
+
+    for step in steps:
+        if not isinstance(step, dict) or step.get("type") != "agentic":
+            continue
+        step_id = step.get("id", "?")
+
+        harness_ref = step.get("harness")
+        if harness_ref:
+            h_name, h_version = _parse_asset_ref(str(harness_ref))
+            if h_version:
+                vf = harness_mod.harness_asset_dir(h_name, base) / f"{h_version}.yaml"
+                if not vf.exists():
+                    errors.append(
+                        f"Step '{step_id}': harness '{harness_ref}' not found. "
+                        f"Fix: run 'harnesskit harness list' to see available harnesses."
+                    )
+            else:
+                current = harness_mod.get_current_version(h_name, base)
+                if current is None:
+                    errors.append(
+                        f"Step '{step_id}': harness '{h_name}' not found. "
+                        f"Fix: create it with 'harnesskit harness create {h_name}'."
+                    )
+
+        skill_ref = step.get("skill")
+        if skill_ref:
+            s_name, s_version = _parse_asset_ref(str(skill_ref))
+            if s_version:
+                vf = skill_mod.skill_dir(s_name, base) / f"{s_version}.yaml"
+                if not vf.exists():
+                    errors.append(
+                        f"Step '{step_id}': skill '{skill_ref}' not found. "
+                        f"Fix: run 'harnesskit skill list' to see available skills."
+                    )
+            else:
+                current = skill_mod.get_current_version(s_name, base)
+                if current is None:
+                    errors.append(
+                        f"Step '{step_id}': skill '{s_name}' not found. "
+                        f"Fix: create it with 'harnesskit skill save --file <yaml>'."
+                    )
+
+    return errors
+
+
+def validate_goto_targets(data: dict[str, Any]) -> list[str]:
+    """Check that all ``goto:<id>`` on_fail values reference valid step IDs.
+
+    Returns a list of error strings (empty = valid).
+    """
+    errors: list[str] = []
+    steps = data.get("steps") or []
+    if not isinstance(steps, list):
+        return errors
+
+    step_ids = {
+        str(s.get("id", ""))
+        for s in steps
+        if isinstance(s, dict) and s.get("id")
+    }
+
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        step_id = step.get("id", "?")
+        on_fail = str(step.get("on_fail", ""))
+        if on_fail.startswith("goto:"):
+            target = on_fail[5:]
+            if target not in step_ids:
+                hints = ", ".join(f"'{sid}'" for sid in sorted(step_ids))
+                errors.append(
+                    f"Step '{step_id}': on_fail='goto:{target}' references unknown step. "
+                    f"Fix: use one of: {hints}."
+                )
+
+    return errors
+
+
+def detect_variable_cycles(data: dict[str, Any]) -> list[str]:
+    """Detect circular variable dependencies between steps.
+
+    E.g. step A uses ``{{steps.B.output}}`` and step B uses ``{{steps.A.output}}``.
+    Returns a list of error strings (empty = no cycles).
+    """
+    errors: list[str] = []
+    steps = data.get("steps") or []
+    if not isinstance(steps, list):
+        return errors
+
+    # Build dependency graph: step_id → set of step_ids it references
+    step_ids: set[str] = set()
+    for step in steps:
+        if isinstance(step, dict) and step.get("id"):
+            step_ids.add(str(step["id"]))
+
+    step_deps: dict[str, set[str]] = {}
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        sid = str(step.get("id", ""))
+        if not sid:
+            continue
+        step_text = yaml.dump(step, allow_unicode=True)
+        refs = set(re.findall(r"\{\{steps\.([^.}\s]+)\.[^}]+\}\}", step_text))
+        step_deps[sid] = refs & step_ids  # only edges to known steps
+
+    # DFS cycle detection (white/gray/black colouring)
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {sid: WHITE for sid in step_ids}
+    reported: set[str] = set()
+
+    def dfs(node: str, path: list[str]) -> None:
+        color[node] = GRAY
+        for dep in step_deps.get(node, set()):
+            if color.get(dep) == GRAY:
+                # Cycle found — extract the cycle portion of the path
+                try:
+                    cycle_start = path.index(dep)
+                except ValueError:
+                    cycle_start = 0
+                cycle = path[cycle_start:] + [dep]
+                cycle_key = "→".join(cycle)
+                if cycle_key not in reported:
+                    reported.add(cycle_key)
+                    errors.append(
+                        f"Circular variable dependency detected: {cycle_key}. "
+                        "Fix: reorder steps or remove the circular reference."
+                    )
+            elif color.get(dep, WHITE) == WHITE:
+                dfs(dep, path + [dep])
+        color[node] = BLACK
+
+    for sid in list(step_ids):
+        if color[sid] == WHITE:
+            dfs(sid, [sid])
+
+    return errors
+
+
+def full_validate(
+    data: dict[str, Any],
+    base: Path | None = None,
+) -> dict[str, list[str]]:
+    """Run all Blueprint validation checks and return results grouped by category.
+
+    Returns a dict ``{category: [error, ...]}``.  An empty list means no errors
+    for that category.
+    """
+    return {
+        "structure": _validate_blueprint_data(data),
+        "variable_refs": validate_variable_refs(data),
+        "asset_refs": validate_asset_refs(data, base),
+        "goto_targets": validate_goto_targets(data),
+        "variable_cycles": detect_variable_cycles(data),
+    }
