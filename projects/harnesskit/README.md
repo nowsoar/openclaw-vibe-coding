@@ -1647,6 +1647,70 @@ Reports are written even when a blueprint fails or is stopped, making them usefu
 
 ---
 
+## Phase 5 — Eval Engine (Phase 5.1)
+
+The **Eval Engine** lets you define repeatable test suites for your Skills and Harnesses — with structured assertions — so you can measure and compare quality over time.
+
+### Test Suite YAML Format
+
+```yaml
+name: code-review-suite
+description: "代码审查测试集"
+
+cases:
+  - id: detect-bug
+    name: "发现除零错误"
+    inputs:
+      code: "def divide(a, b): return a/b"
+      language: python
+    assertions:
+      - type: contains
+        path: "$.issues[*].type"
+        value: "ZeroDivisionError"
+      - type: regex
+        path: "$.summary"
+        pattern: "异常处理|error handling"
+
+  - id: empty-function
+    name: "空函数检查"
+    inputs:
+      code: "def foo(): pass"
+      language: python
+    assertions:
+      - type: contains
+        path: "$.issues[*].message"
+        value: "缺少实现"
+```
+
+**Supported assertion types:**
+
+| Type | Required fields | Description |
+|---|---|---|
+| `contains` | `path`, `value` | JSONPath result contains `value` |
+| `regex` | `path`, `pattern` | JSONPath result matches regex `pattern` |
+| `json_schema` | `path`, `schema` | JSONPath result validates against JSON Schema |
+| `custom` | `function` | Call a custom Python function (e.g. `mymodule.check`) |
+
+Storage: `.harness/evals/suites/{name}.yaml` (no versioning — direct overwrite).
+
+### Eval Commands
+
+```bash
+# Add or update a test suite from a YAML file
+harnesskit eval suite-add --file suite.yaml
+
+# List all saved test suites
+harnesskit eval list
+
+# Inspect a test suite (cases + assertions)
+harnesskit eval show code-review-suite
+
+# Delete a test suite
+harnesskit eval delete code-review-suite --yes
+```
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -1682,4 +1746,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 4.5 complete** — Variable passing system with pipe filters: `{{value | truncate:N}}`, `{{value | json}}`, `{{value | upper}}`, `{{value | lower}}`, `{{value | strip}}` — filters are chainable and work in `run` commands, `inputs` maps, and the `outputs` block. 37 new pytest tests (840 total, 100 % passing).
+Current status: **Phase 5.1 complete** — Eval Engine: Test Suite data model with `contains`, `regex`, `json_schema`, and `custom` assertion types. `harnesskit eval suite-add/list/show/delete` commands. 48 new pytest tests (951 total, 100 % passing).

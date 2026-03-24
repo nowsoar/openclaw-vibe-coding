@@ -31,6 +31,7 @@ from harness_kit import call_logger as _call_logger_mod
 from harness_kit import memory as _memory_mod
 from harness_kit import agent as _agent_mod
 from harness_kit import blueprint as _blueprint_mod
+from harness_kit import eval as _eval_mod
 from harness_kit.llm import LLMConfig, build_messages, call_llm
 
 app = typer.Typer(
@@ -110,6 +111,13 @@ app.add_typer(agent_app, name="agent")
 
 blueprint_app = typer.Typer(help="Manage blueprint workflows.", no_args_is_help=True)
 app.add_typer(blueprint_app, name="blueprint")
+
+# ---------------------------------------------------------------------------
+# eval sub-app
+# ---------------------------------------------------------------------------
+
+eval_app = typer.Typer(help="Eval engine — manage test suites.", no_args_is_help=True)
+app.add_typer(eval_app, name="eval")
 
 
 def _require_init() -> None:
@@ -3169,6 +3177,154 @@ def blueprint_delete(
 
     label = f"'{name}@{version}'" if version else f"'{name}'"
     console.print(f"[green]✓ Deleted blueprint {label}.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# eval suite-add
+# ---------------------------------------------------------------------------
+
+
+@eval_app.command("suite-add")
+def eval_suite_add(
+    file: str = typer.Option(..., "--file", "-f", help="Path to test suite YAML file."),
+) -> None:
+    """Add or update a test suite from a YAML file."""
+    _require_init()
+    path = Path(file)
+    if not path.exists():
+        console.print(f"[red]✗ File not found: {file}[/red]")
+        raise typer.Exit(1)
+
+    with path.open("r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+
+    if not isinstance(data, dict):
+        console.print("[red]✗ File must contain a YAML mapping.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        _eval_mod.save_suite(data)
+    except ValueError as e:
+        console.print(f"[red]✗ Validation error:[/red]\n{e}")
+        raise typer.Exit(1)
+
+    name = data.get("name", "?")
+    case_count = len(data.get("cases") or [])
+    console.print(f"[green]✓ Test suite '{name}' saved ({case_count} cases).[/green]")
+
+
+# ---------------------------------------------------------------------------
+# eval list
+# ---------------------------------------------------------------------------
+
+
+@eval_app.command("list")
+def eval_list() -> None:
+    """List all test suites."""
+    _require_init()
+    names = _eval_mod.list_suites()
+    if not names:
+        console.print("[dim]No test suites found.[/dim]")
+        return
+
+    table = Table(title="Test Suites", show_lines=False)
+    table.add_column("Name", style="cyan")
+    table.add_column("Description", style="white")
+    table.add_column("Cases", justify="right")
+    table.add_column("Assertions", justify="right")
+
+    for name in names:
+        try:
+            data = _eval_mod.load_suite(name)
+            s = _eval_mod.suite_summary(data)
+            table.add_row(
+                s["name"],
+                s["description"][:60] + ("…" if len(s["description"]) > 60 else ""),
+                str(s["case_count"]),
+                str(s["assertion_count"]),
+            )
+        except Exception:
+            table.add_row(name, "[red]error reading suite[/red]", "-", "-")
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# eval show
+# ---------------------------------------------------------------------------
+
+
+@eval_app.command("show")
+def eval_show(
+    name: str = typer.Argument(..., help="Test suite name."),
+) -> None:
+    """Show test suite details."""
+    _require_init()
+    try:
+        data = _eval_mod.load_suite(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    s = _eval_mod.suite_summary(data)
+    console.print(f"\n[bold cyan]{s['name']}[/bold cyan]")
+    console.print(f"[dim]{s['description']}[/dim]")
+    console.print(f"\n[bold]Cases:[/bold] {s['case_count']}  [bold]Assertions:[/bold] {s['assertion_count']}\n")
+
+    cases = data.get("cases") or []
+    for case in cases:
+        cid = case.get("id", "?")
+        cname = case.get("name", "")
+        assertions = case.get("assertions") or []
+        console.print(f"  [cyan]{cid}[/cyan]  {cname}")
+        inputs = case.get("inputs") or {}
+        if inputs:
+            input_keys = ", ".join(f"[yellow]{k}[/yellow]" for k in inputs)
+            console.print(f"    inputs: {input_keys}")
+        for a in assertions:
+            atype = a.get("type", "?")
+            path_val = a.get("path", "")
+            detail = ""
+            if atype == "contains":
+                detail = f"path={path_val!r} contains {a.get('value')!r}"
+            elif atype == "regex":
+                detail = f"path={path_val!r} matches r{a.get('pattern')!r}"
+            elif atype == "json_schema":
+                detail = f"path={path_val!r} validates JSON Schema"
+            elif atype == "custom":
+                detail = f"custom fn={a.get('function')!r}"
+            else:
+                detail = str(a)
+            console.print(f"    [green]{atype}[/green]: {detail}")
+        console.print()
+
+
+# ---------------------------------------------------------------------------
+# eval delete
+# ---------------------------------------------------------------------------
+
+
+@eval_app.command("delete")
+def eval_delete(
+    name: str = typer.Argument(..., help="Test suite name."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Delete a test suite."""
+    _require_init()
+    if not yes:
+        console.print(f"[yellow]About to delete test suite '{name}'.[/yellow]")
+        confirmed = typer.confirm("Continue?")
+        if not confirmed:
+            console.print("[dim]Aborted.[/dim]")
+            return
+
+    try:
+        _eval_mod.delete_suite(name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Test suite '{name}' deleted.[/green]")
 
 
 if __name__ == "__main__":

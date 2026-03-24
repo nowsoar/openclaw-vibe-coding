@@ -734,7 +734,7 @@ Blueprint（工作流编排）
 
 **目标**：量化测试 Harness/Skill 效果，支持 A/B 对比。
 
-### Phase 5.1：Test Suite 定义
+### Phase 5.1：Test Suite 定义 ✅
 **任务**：
 1. Test Suite YAML 格式
    ```yaml
@@ -772,8 +772,8 @@ Blueprint（工作流编排）
 2. 存储路径：`.harness/evals/suites/{name}.yaml`
 
 **验收标准**：
-- Test Suite 结构正确
-- 支持多种断言类型
+- ✅ Test Suite 结构正确
+- ✅ 支持多种断言类型
 
 ---
 
