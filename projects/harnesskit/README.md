@@ -1330,6 +1330,12 @@ harnesskit agent run code-assistant
 | `harnesskit agent list` | List all agents |
 | `harnesskit agent show <name>` | Show agent definition |
 | `harnesskit agent delete <name> --yes` | Delete an agent |
+| `harnesskit blueprint create <name> --file <yaml>` | Create/update a blueprint |
+| `harnesskit blueprint show <name[@ver]>` | Display blueprint definition |
+| `harnesskit blueprint list` | List all blueprints |
+| `harnesskit blueprint diff <a> <b>` | Diff two blueprint versions |
+| `harnesskit blueprint validate <name>` | Validate structure + variable refs |
+| `harnesskit blueprint delete <name[@ver]>` | Delete a blueprint |
 
 Use `--help` on any command for full option details:
 
@@ -1337,6 +1343,95 @@ Use `--help` on any command for full option details:
 harnesskit --help
 harnesskit prompt --help
 harnesskit prompt save --help
+```
+
+---
+
+## Phase 4 — Blueprint Workflows (Phase 4.1)
+
+A **Blueprint** defines a hybrid workflow composed of *deterministic* nodes (shell commands) and *agentic* nodes (Harness / Skill calls). Steps pass data to each other via `{{steps.xxx.output}}` interpolation.
+
+### Blueprint YAML Format
+
+```yaml
+name: code-review-pipeline
+version: v0.1.0
+description: "完整的代码审查流水线"
+
+inputs:
+  - name: file_path
+    required: true
+
+steps:
+  - id: lint
+    type: deterministic
+    name: "代码格式检查"
+    run: "flake8 {{inputs.file_path}}"
+    on_fail: stop     # stop | continue | goto:<step_id>
+    timeout: 10       # seconds
+
+  - id: review
+    type: agentic
+    name: "AI 代码审查"
+    harness: my-code-review@v0.1.0
+    inputs:
+      code: "{{steps.lint.output}}"
+    max_retries: 2
+    timeout: 60
+
+  - id: summary
+    type: agentic
+    name: "生成摘要"
+    skill: summarize@v0.1.0
+    inputs:
+      text: "{{steps.review.output}}"
+
+outputs:
+  lint_result: "{{steps.lint.output}}"
+  review_result: "{{steps.review.output}}"
+  summary: "{{steps.summary.output}}"
+```
+
+### Variable Interpolation
+
+| Syntax | Meaning |
+|--------|---------|
+| `{{inputs.file_path}}` | Blueprint-level input value |
+| `{{steps.lint.output}}` | stdout / result of the `lint` step |
+| `{{steps.lint.exit_code}}` | Exit code of a deterministic step |
+| `{{env.MY_VAR}}` | Environment variable (Phase 4.5) |
+
+### `harnesskit blueprint` Commands
+
+```bash
+# Create / update a blueprint from a YAML file
+harnesskit blueprint create my-pipeline --file pipeline.yaml
+
+# Show blueprint definition
+harnesskit blueprint show my-pipeline
+harnesskit blueprint show my-pipeline@v0.0.1
+
+# List all blueprints
+harnesskit blueprint list
+
+# Diff two versions
+harnesskit blueprint diff my-pipeline@v0.0.1 my-pipeline@v0.0.2
+
+# Validate structure and variable references
+harnesskit blueprint validate my-pipeline
+
+# Delete (all versions or a specific one)
+harnesskit blueprint delete my-pipeline --yes
+harnesskit blueprint delete my-pipeline@v0.0.1 --yes
+```
+
+### Storage Layout
+
+```
+.harness/blueprints/{name}/
+    v0.0.1.yaml
+    v0.0.2.yaml
+    _current          ← plain-text file containing current version
 ```
 
 ---
@@ -1376,4 +1471,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 3.5 complete** — Phase 3 integration, error handling, performance validation, and documentation: complete end-to-end workflow (init → prompt → skill → harness → agent → REPL), 41 Phase 3 integration tests covering the full flow, error handling with clear messages, performance baselines (50 harness saves < 2s, 100 memory turns < 500ms), and Harness/Agent tutorial with best practices. 672 pytest tests passing.
+Current status: **Phase 4.1 complete** — Blueprint YAML format, versioned storage, and CLI commands (`create`, `show`, `list`, `diff`, `validate`, `delete`): supports deterministic + agentic step types, variable interpolation syntax (`{{steps.xxx.output}}`), and structural/reference validation. 43 new pytest tests (715 total) all passing.

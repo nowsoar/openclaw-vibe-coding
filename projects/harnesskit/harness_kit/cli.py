@@ -29,6 +29,7 @@ from harness_kit import harness as _harness_mod
 from harness_kit import call_logger as _call_logger_mod
 from harness_kit import memory as _memory_mod
 from harness_kit import agent as _agent_mod
+from harness_kit import blueprint as _blueprint_mod
 from harness_kit.llm import LLMConfig, build_messages, call_llm
 
 app = typer.Typer(
@@ -101,6 +102,13 @@ app.add_typer(memory_app, name="memory")
 
 agent_app = typer.Typer(help="Manage AI agents (interactive conversation).", no_args_is_help=True)
 app.add_typer(agent_app, name="agent")
+
+# ---------------------------------------------------------------------------
+# blueprint sub-app
+# ---------------------------------------------------------------------------
+
+blueprint_app = typer.Typer(help="Manage blueprint workflows.", no_args_is_help=True)
+app.add_typer(blueprint_app, name="blueprint")
 
 
 def _require_init() -> None:
@@ -2700,6 +2708,245 @@ def init() -> None:
 
 def main() -> None:
     app()
+
+
+# ---------------------------------------------------------------------------
+# blueprint commands are appended below
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# blueprint create
+# ---------------------------------------------------------------------------
+
+
+@blueprint_app.command("create")
+def blueprint_create(
+    name: str = typer.Argument(..., help="Blueprint name (identifier)."),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Load blueprint definition from YAML file."),
+    description: str = typer.Option("", "--description", "-d", help="Short description."),
+    changelog: str = typer.Option("", "--changelog", help="Changelog note for this version."),
+) -> None:
+    """Create or update a blueprint. Accepts --file <yaml> or individual options."""
+    _require_init()
+
+    if file:
+        if not file.exists():
+            console.print(f"[red]✗ File not found:[/red] {file}")
+            raise typer.Exit(1)
+        with file.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+        if not isinstance(data, dict):
+            console.print("[red]✗ YAML file must contain a mapping.[/red]")
+            raise typer.Exit(1)
+        data["name"] = name
+    else:
+        data = {
+            "name": name,
+            "description": description,
+            "inputs": [],
+            "steps": [],
+            "outputs": {},
+            "changelog": changelog,
+        }
+
+    errors = _blueprint_mod._validate_blueprint_data(data)
+    if errors:
+        console.print("[red]✗ Blueprint definition errors:[/red]")
+        for e in errors:
+            console.print(f"  • {e}")
+        raise typer.Exit(1)
+
+    version, is_new = _blueprint_mod.save_blueprint_from_dict(data)
+    action = "[green]✓ Created[/green]" if is_new else "[blue]↑ Updated[/blue]"
+    console.print(f"{action} blueprint [bold]{name}[/bold] → [cyan]{version}[/cyan]")
+
+
+# ---------------------------------------------------------------------------
+# blueprint show
+# ---------------------------------------------------------------------------
+
+
+@blueprint_app.command("show")
+def blueprint_show(
+    ref: str = typer.Argument(..., help="Blueprint name or name@version."),
+) -> None:
+    """Show a blueprint definition."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+    try:
+        data = _blueprint_mod.load_blueprint(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold cyan]{data['name']}[/bold cyan] [dim]{data['version']}[/dim]")
+    if data.get("description"):
+        console.print(f"[dim]{data['description']}[/dim]\n")
+
+    inputs = data.get("inputs") or []
+    if inputs:
+        console.print("[bold]Inputs:[/bold]")
+        for inp in inputs:
+            req = "[red]*[/red]" if inp.get("required") else "[dim]opt[/dim]"
+            default = f" (default: {inp['default']})" if inp.get("default") else ""
+            console.print(f"  {req} [cyan]{inp['name']}[/cyan]{default}")
+
+    steps = data.get("steps") or []
+    if steps:
+        console.print("\n[bold]Steps:[/bold]")
+        for step in steps:
+            stype = step.get("type", "?")
+            sid = step.get("id", "?")
+            sname = step.get("name", "")
+            color = "green" if stype == "deterministic" else "yellow"
+            console.print(f"  [{color}]{stype}[/{color}] [bold]{sid}[/bold]"
+                          + (f" — {sname}" if sname else ""))
+            if step.get("run"):
+                console.print(f"    run: [dim]{step['run']}[/dim]")
+            if step.get("harness"):
+                console.print(f"    harness: [cyan]{step['harness']}[/cyan]")
+            if step.get("skill"):
+                console.print(f"    skill: [cyan]{step['skill']}[/cyan]")
+
+    outputs = data.get("outputs") or {}
+    if outputs:
+        console.print("\n[bold]Outputs:[/bold]")
+        for k, v in outputs.items():
+            console.print(f"  [cyan]{k}[/cyan]: {v}")
+
+
+# ---------------------------------------------------------------------------
+# blueprint list
+# ---------------------------------------------------------------------------
+
+
+@blueprint_app.command("list")
+def blueprint_list() -> None:
+    """List all blueprints."""
+    _require_init()
+    items = _blueprint_mod.list_blueprints()
+    if not items:
+        console.print("[dim]No blueprints found.[/dim]")
+        return
+
+    table = Table(title="Blueprints", show_lines=False, header_style="bold cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Version", style="cyan")
+    table.add_column("Steps", justify="right")
+    table.add_column("Description")
+
+    for bp in items:
+        steps = bp.get("steps") or []
+        table.add_row(
+            bp.get("name", ""),
+            bp.get("version", ""),
+            str(len(steps)),
+            bp.get("description", ""),
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# blueprint diff
+# ---------------------------------------------------------------------------
+
+
+@blueprint_app.command("diff")
+def blueprint_diff(
+    ref_a: str = typer.Argument(..., help="First blueprint ref (name or name@version)."),
+    ref_b: str = typer.Argument(..., help="Second blueprint ref (name or name@version)."),
+) -> None:
+    """Show a unified diff between two blueprint versions."""
+    _require_init()
+    name_a, ver_a = _parse_name_version(ref_a)
+    name_b, ver_b = _parse_name_version(ref_b)
+    try:
+        lines = _blueprint_mod.diff_blueprints(name_a, ver_a, name_b, ver_b)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    if not lines:
+        console.print("[dim]No differences.[/dim]")
+        return
+
+    for line in lines:
+        line = line.rstrip("\n")
+        if line.startswith("+++") or line.startswith("---"):
+            console.print(Text(line, style="bold"))
+        elif line.startswith("+"):
+            console.print(Text(line, style="green"))
+        elif line.startswith("-"):
+            console.print(Text(line, style="red"))
+        elif line.startswith("@@"):
+            console.print(Text(line, style="cyan"))
+        else:
+            console.print(line)
+
+
+# ---------------------------------------------------------------------------
+# blueprint validate
+# ---------------------------------------------------------------------------
+
+
+@blueprint_app.command("validate")
+def blueprint_validate(
+    ref: str = typer.Argument(..., help="Blueprint name or name@version."),
+) -> None:
+    """Validate a blueprint's structure and variable references."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+    try:
+        data = _blueprint_mod.load_blueprint(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    struct_errors = _blueprint_mod._validate_blueprint_data(data)
+    var_errors = _blueprint_mod.validate_variable_refs(data)
+    all_errors = struct_errors + var_errors
+
+    if all_errors:
+        console.print(f"[red]✗ Blueprint '{name}' has {len(all_errors)} error(s):[/red]")
+        for e in all_errors:
+            console.print(f"  • {e}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Blueprint '{name}' is valid.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# blueprint delete
+# ---------------------------------------------------------------------------
+
+
+@blueprint_app.command("delete")
+def blueprint_delete(
+    ref: str = typer.Argument(..., help="Blueprint name or name@version."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Delete a blueprint (or a specific version)."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    if not yes:
+        target = f"'{name}@{version}'" if version else f"all versions of '{name}'"
+        console.print(f"[yellow]About to delete {target}.[/yellow]")
+        confirmed = typer.confirm("Continue?")
+        if not confirmed:
+            console.print("[dim]Aborted.[/dim]")
+            return
+
+    try:
+        _blueprint_mod.delete_blueprint(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    label = f"'{name}@{version}'" if version else f"'{name}'"
+    console.print(f"[green]✓ Deleted blueprint {label}.[/green]")
 
 
 if __name__ == "__main__":

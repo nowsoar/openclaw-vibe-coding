@@ -18,6 +18,7 @@ SUBDIRS = [
     "skills",
     "harnesses",
     "agents",
+    "blueprints",
     "logs",
     "evals",
     "improvements",

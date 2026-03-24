@@ -576,7 +576,7 @@ Blueprint（工作流编排）
 
 **目标**：实现确定性节点 + Agentic 节点的混合工作流。
 
-### Phase 4.1：Blueprint YAML 格式
+### Phase 4.1：Blueprint YAML 格式 ✅
 **任务**：
 1. Blueprint 数据结构
    ```yaml
@@ -623,8 +623,8 @@ Blueprint（工作流编排）
 3. 实现 `harnesskit blueprint create`
 
 **验收标准**：
-- Blueprint 结构正确
-- 支持变量插值语法 `{{steps.xxx.output}}`
+- ✅ Blueprint 结构正确
+- ✅ 支持变量插值语法 `{{steps.xxx.output}}`
 
 ---
 
