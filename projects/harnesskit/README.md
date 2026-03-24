@@ -522,7 +522,7 @@ harnesskit logs search --skill code-reviewer --status success --limit 10
 
 #### Log record format (JSONL)
 
-Each line in `calls.jsonl`:
+Each line in `calls.jsonl`. When hard rules are triggered, a `violations` field is included:
 
 ```json
 {
@@ -534,11 +534,44 @@ Each line in `calls.jsonl`:
   "output_tokens": 80,
   "total_tokens": 200,
   "duration": 1.23,
-  "status": "success",
-  "inputs": {"code": "def foo(): pass", "language": "python"},
-  "output_preview": "Issues found:\n1. Missing implementation..."
+  "status": "rule_violation",
+  "inputs": {"code": "def foo(): pass"},
+  "output_preview": "我猜测这里有一个 bug...",
+  "violations": [
+    {
+      "rule": "no-speculation",
+      "type": "hard",
+      "matches": ["我猜测"],
+      "fix_hint": "Remove speculative language"
+    }
+  ],
+  "violation_count": 1
 }
 ```
+
+---
+
+### `harnesskit rule stats` — Violation Statistics
+
+View how many times each rule has been violated across all recorded LLM calls:
+
+```bash
+harnesskit rule stats
+```
+
+Output:
+
+```
+      Rule Violation Statistics
+Rule              Type  Violations  Description
+no-speculation    hard           3  No speculative content
+no-hallucination  hard           1  No fabricated information
+be-concise        soft           0  Keep responses brief
+
+Total violations recorded in call logs: 4
+```
+
+This command reads `.harness/logs/calls.jsonl` to aggregate counts. It shows all rules (including those with zero violations) and highlights any rules that were deleted after violations were recorded.
 
 ---
 
@@ -567,12 +600,14 @@ Each line in `calls.jsonl`:
 | `harnesskit rule list` | List all rules |
 | `harnesskit rule show <name>` | Display a rule |
 | `harnesskit rule test <name>` | Test rule against input |
+| `harnesskit rule stats` | Violation count statistics |
 | `harnesskit rule delete <name>` | Delete a rule |
 | `harnesskit doctor` | Health check scan |
 | `harnesskit skill run <name>` | Run a skill via LLM |
 | `harnesskit skill run <name> --dry-run` | Preview assembled messages |
 | `harnesskit skill run <name> --stream` | Stream LLM output |
 | `harnesskit skill run <name> --check-rules strict` | Fail on hard rule violations |
+| `harnesskit skill run <name> --check-rules lenient` | Warn on violations, continue |
 | `harnesskit logs tail` | View recent LLM call logs |
 | `harnesskit logs search` | Search/filter call logs |
 
@@ -619,4 +654,4 @@ pytest tests/test_integration.py -v
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 2.3 complete** — Skill independent execution: LLM calls (OpenAI-compatible), streaming output, hard/soft rule enforcement, and call logging.
+Current status: **Phase 2.4 complete** — Rule 运行时检查: structured violation logging in strict and lenient modes, violation count statistics via `harnesskit rule stats`, and violations field in call logs.

@@ -836,6 +836,55 @@ def rule_delete(
     console.print(f"[green]✓ Deleted rule[/green] [bold]{name}[/bold]")
 
 
+@rule_app.command("stats")
+def rule_stats() -> None:
+    """Show rule violation statistics aggregated from call logs."""
+    _require_init()
+
+    counts = _call_logger_mod.violation_stats()
+    rules = _rule_mod.list_rules()
+
+    if not rules and not counts:
+        console.print("[dim]No rules found.[/dim]")
+        return
+
+    table = Table(title="Rule Violation Statistics", show_lines=False)
+    table.add_column("Rule", style="cyan")
+    table.add_column("Type", style="dim")
+    table.add_column("Violations", justify="right")
+    table.add_column("Description", style="dim")
+
+    # Show all known rules with their counts
+    shown_rules = set()
+    for rule in rules:
+        rname = rule.get("name", "")
+        count = counts.get(rname, 0)
+        rtype = rule.get("type", "hard")
+        desc = rule.get("description", "")
+        type_color = "red" if rtype == "hard" else "yellow"
+        count_style = "bold red" if count > 0 else "dim"
+        table.add_row(
+            rname,
+            f"[{type_color}]{rtype}[/{type_color}]",
+            f"[{count_style}]{count}[/{count_style}]",
+            desc,
+        )
+        shown_rules.add(rname)
+
+    # Show any rules in logs that no longer exist as files
+    for rname, count in sorted(counts.items()):
+        if rname not in shown_rules:
+            table.add_row(rname, "[dim]deleted[/dim]", f"[bold red]{count}[/bold red]", "[dim](rule file removed)[/dim]")
+
+    console.print(table)
+
+    total = sum(counts.values())
+    if total:
+        console.print(f"\n[dim]Total violations recorded in call logs: [bold]{total}[/bold][/dim]")
+    else:
+        console.print("\n[dim]No violations recorded in call logs.[/dim]")
+
+
 # ---------------------------------------------------------------------------
 # doctor
 # ---------------------------------------------------------------------------
@@ -1292,7 +1341,8 @@ def skill_run(
         )
         raise typer.Exit(1)
 
-    # Apply hard rules if output available
+    # Apply hard rules if output available — collect structured violation data
+    violations_data: list[dict] = []
     if output_content and output_content != "[streamed]":
         rule_names = []
         assets = skill_data.get("assets") or {}
@@ -1300,37 +1350,44 @@ def skill_run(
             rname, _ = _skill_mod._parse_asset_ref(str(rref))
             rule_names.append(rname)
 
-        violations: list[str] = []
         for rname in rule_names:
             try:
-                result = _rule_mod.check_rule_by_name(rname, output_content)
-                if result.triggered and result.rule_type == "hard":
-                    violations.append(
-                        f"[hard] {rname}: {result.fix_hint or 'Rule violated'} "
-                        f"(matches: {result.matches})"
-                    )
+                check_result = _rule_mod.check_rule_by_name(rname, output_content)
+                if check_result.triggered and check_result.rule_type == "hard":
+                    violations_data.append({
+                        "rule": check_result.rule_name,
+                        "type": "hard",
+                        "matches": check_result.matches,
+                        "fix_hint": check_result.fix_hint or "",
+                    })
             except Exception:
                 pass
 
-        if violations:
-            console.print("\n[bold yellow]── Rule Violations ──[/bold yellow]")
-            for v in violations:
-                console.print(f"  [yellow]⚠[/yellow] {v}")
-            if check_rules == "strict":
-                call_status = "rule_violation"
-                _call_logger_mod.log_call(
-                    skill=name,
-                    model=llm_resp_model,
-                    input_tokens=llm_resp_input_tokens,
-                    output_tokens=llm_resp_output_tokens,
-                    duration=llm_resp_duration,
-                    status=call_status,
-                    inputs=vars_dict,
-                    output=output_content,
-                )
-                raise typer.Exit(1)
+    if violations_data:
+        console.print("\n[bold yellow]── Rule Violations ──[/bold yellow]")
+        for v in violations_data:
+            console.print(
+                f"  [yellow]⚠[/yellow] [hard] {v['rule']}: "
+                f"{v['fix_hint'] or 'Rule violated'} (matches: {v['matches']})"
+            )
+        call_status = "rule_violation"
+        _call_logger_mod.log_call(
+            skill=name,
+            model=llm_resp_model,
+            input_tokens=llm_resp_input_tokens,
+            output_tokens=llm_resp_output_tokens,
+            duration=llm_resp_duration,
+            status=call_status,
+            inputs=vars_dict,
+            output=output_content,
+            violations=violations_data,
+        )
+        if check_rules == "strict":
+            raise typer.Exit(1)
+        # lenient: warn but continue — log already written above
+        return
 
-    # Log successful call
+    # Log successful call (no violations)
     _call_logger_mod.log_call(
         skill=name,
         model=llm_resp_model,

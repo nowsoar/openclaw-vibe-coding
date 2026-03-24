@@ -24,12 +24,19 @@ def log_call(
     error: str | None = None,
     inputs: dict[str, Any] | None = None,
     output: str | None = None,
+    violations: list[dict[str, Any]] | None = None,
     base: Path | None = None,
 ) -> None:
     """Append a call record to .harness/logs/calls.jsonl.
 
     Creates the file (and parent directories) if they don't exist.
     Silently ignores write errors so that logging never breaks the main flow.
+
+    Parameters
+    ----------
+    violations:
+        List of rule violation dicts, each with keys: rule, type, matches, fix_hint.
+        Included when any hard rules are triggered (both strict and lenient modes).
     """
     record: dict[str, Any] = {
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
@@ -48,6 +55,9 @@ def log_call(
         record["inputs"] = inputs
     if output is not None:
         record["output_preview"] = output[:200] + ("..." if len(output) > 200 else "")
+    if violations is not None:
+        record["violations"] = violations
+        record["violation_count"] = len(violations)
 
     try:
         log_file = _logs_file(base)
@@ -76,6 +86,28 @@ def tail_logs(
             except json.JSONDecodeError:
                 pass
     return records
+
+
+def violation_stats(
+    base: Path | None = None,
+) -> dict[str, int]:
+    """Return a mapping of rule_name → total violation count across all call logs."""
+    log_file = _logs_file(base)
+    if not log_file.exists():
+        return {}
+    counts: dict[str, int] = {}
+    for line in log_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        for v in record.get("violations") or []:
+            rule = v.get("rule", "unknown")
+            counts[rule] = counts.get(rule, 0) + 1
+    return counts
 
 
 def search_logs(

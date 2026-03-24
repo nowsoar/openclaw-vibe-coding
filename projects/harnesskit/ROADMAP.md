@@ -349,7 +349,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 2.4：Rule 运行时检查
+### Phase 2.4：Rule 运行时检查 ✅
 **任务**：
 1. 硬规则（hard rule）运行时检查
    - LLM 输出后自动运行所有 hard rules
@@ -365,9 +365,11 @@ Blueprint（工作流编排）
    - lenient 模式：仅警告
 
 **验收标准**：
-- hard rule 能拦截违规输出
-- soft rule 正确注入 prompt
-- 命令行参数生效
+- ✅ hard rule 能拦截违规输出
+- ✅ soft rule 正确注入 prompt
+- ✅ 命令行参数生效
+- ✅ 违规记录到日志（violations 字段 + violation_count）
+- ✅ `harnesskit rule stats` 统计违规次数
 
 ---
 
