@@ -414,6 +414,70 @@ Returns exit code `1` if broken references or cycles are found, making it CI-fri
 
 ## Phase 2 Commands Reference
 
+### `harnesskit skill` — Skill Version Management (Phase 2.5)
+
+#### Tag a skill version
+
+Create a named alias pointing to a specific (or current) version:
+
+```bash
+# Tag the current version as 'production'
+harnesskit skill tag code-reviewer --name production
+
+# Tag a specific version
+harnesskit skill tag code-reviewer --name stable --version v0.0.1
+```
+
+Then load by tag alias:
+
+```bash
+harnesskit skill show code-reviewer@production
+harnesskit skill run code-reviewer@production --var code="def foo(): pass"
+```
+
+#### Clone a skill
+
+Copy a skill under a new name, resetting its version to `v0.0.1`:
+
+```bash
+harnesskit skill clone code-reviewer code-reviewer-experimental
+```
+
+The cloned skill:
+- Gets a new name and `v0.0.1` version
+- Preserves all inputs, outputs, assets, and examples
+- Sets `changelog` to `"Cloned from 'code-reviewer'"`
+
+#### List dependencies
+
+Show all asset references declared by a skill:
+
+```bash
+harnesskit skill deps code-reviewer
+harnesskit skill deps code-reviewer@v0.0.1
+```
+
+Output:
+
+```
+Dependencies of code-reviewer:
+
+Prompts:
+  • code-reviewer-system@v0.1.0
+  • code-reviewer-user@v0.0.1
+
+Rules:
+  • no-hallucination
+  • output-json
+
+Context:
+  • code-review-ctx@v0.0.1
+
+Total: 4 dependency(ies)
+```
+
+---
+
 ### `harnesskit skill run` — Execute a Skill via LLM
 
 Run a skill by assembling its prompts, context, and rules, then calling the configured LLM.
@@ -603,6 +667,14 @@ This command reads `.harness/logs/calls.jsonl` to aggregate counts. It shows all
 | `harnesskit rule stats` | Violation count statistics |
 | `harnesskit rule delete <name>` | Delete a rule |
 | `harnesskit doctor` | Health check scan |
+| `harnesskit skill save <name> --file <yaml>` | Save/update a skill |
+| `harnesskit skill show <name[@ver]>` | Display skill definition |
+| `harnesskit skill list` | List all skills |
+| `harnesskit skill diff <a> <b>` | Diff two skill versions |
+| `harnesskit skill validate <name>` | Check all asset refs are valid |
+| `harnesskit skill tag <name> --name <tag>` | Create a version alias |
+| `harnesskit skill clone <name> <new-name>` | Clone skill to new name (v0.0.1) |
+| `harnesskit skill deps <name[@ver]>` | List all asset dependencies |
 | `harnesskit skill run <name>` | Run a skill via LLM |
 | `harnesskit skill run <name> --dry-run` | Preview assembled messages |
 | `harnesskit skill run <name> --stream` | Stream LLM output |
@@ -654,4 +726,4 @@ pytest tests/test_integration.py -v
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 2.4 complete** — Rule 运行时检查: structured violation logging in strict and lenient modes, violation count statistics via `harnesskit rule stats`, and violations field in call logs.
+Current status: **Phase 2.5 complete** — Skill 版本管理进阶: tag aliases (`skill tag`), skill cloning (`skill clone`), and dependency listing (`skill deps`).

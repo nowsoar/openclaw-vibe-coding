@@ -373,7 +373,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 2.5：Skill 版本管理进阶
+### Phase 2.5：Skill 版本管理进阶 ✅
 **任务**：
 1. Skill Tag 功能
    - `harnesskit skill tag <name> --name production`
@@ -388,8 +388,8 @@ Blueprint（工作流编排）
    - `harnesskit skill deps <name>` —— 列出所有依赖的资产
 
 **验收标准**：
-- tag 和 clone 功能正常
-- 依赖列表准确
+- ✅ tag 和 clone 功能正常
+- ✅ 依赖列表准确
 
 ---
 

@@ -1401,8 +1401,109 @@ def skill_run(
 
 
 # ---------------------------------------------------------------------------
-# logs tail / search
+# skill tag
 # ---------------------------------------------------------------------------
+
+
+@skill_app.command("tag")
+def skill_tag(
+    name: str = typer.Argument(..., help="Skill name."),
+    tag_name: str = typer.Option(..., "--name", "-n", help="Tag alias name (e.g. 'production')."),
+    version: Optional[str] = typer.Option(None, "--version", "-v", help="Version to tag (default: current)."),
+) -> None:
+    """Create a tag alias for a skill version (e.g. 'production')."""
+    _require_init()
+
+    try:
+        tagged_version = _skill_mod.tag_skill(name, tag_name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]✓ Tagged[/green] [bold]{name}[/bold]@[cyan]{tagged_version}[/cyan] "
+        f"→ [bold yellow]{tag_name}[/bold yellow]"
+    )
+
+
+# ---------------------------------------------------------------------------
+# skill clone
+# ---------------------------------------------------------------------------
+
+
+@skill_app.command("clone")
+def skill_clone(
+    name: str = typer.Argument(..., help="Source skill name."),
+    new_name: str = typer.Argument(..., help="New skill name."),
+) -> None:
+    """Clone a skill to a new name, resetting to v0.0.1."""
+    _require_init()
+
+    try:
+        _skill_mod.clone_skill(name, new_name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+    except FileExistsError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]✓ Cloned[/green] [bold]{name}[/bold] → [bold]{new_name}[/bold] "
+        f"([cyan]v0.0.1[/cyan])"
+    )
+
+
+# ---------------------------------------------------------------------------
+# skill deps
+# ---------------------------------------------------------------------------
+
+
+@skill_app.command("deps")
+def skill_deps(
+    ref: str = typer.Argument(..., help="Skill name or name@version."),
+) -> None:
+    """List all asset dependencies of a skill."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    try:
+        deps = _skill_mod.get_skill_deps(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    total = sum(len(v) for v in deps.values())
+    if total == 0:
+        console.print(f"[dim]Skill [bold]{ref}[/bold] has no asset dependencies.[/dim]")
+        return
+
+    console.print(f"\n[bold cyan]Dependencies of [bold]{ref}[/bold]:[/bold cyan]")
+
+    if deps["prompts"]:
+        console.print("\n[bold]Prompts:[/bold]")
+        for r in deps["prompts"]:
+            console.print(f"  • [cyan]{r}[/cyan]")
+
+    if deps["schemas"]:
+        console.print("\n[bold]Schemas:[/bold]")
+        for r in deps["schemas"]:
+            console.print(f"  • [cyan]{r}[/cyan]")
+
+    if deps["rules"]:
+        console.print("\n[bold]Rules:[/bold]")
+        for r in deps["rules"]:
+            console.print(f"  • [cyan]{r}[/cyan]")
+
+    if deps["context"]:
+        console.print("\n[bold]Context:[/bold]")
+        for r in deps["context"]:
+            console.print(f"  • [cyan]{r}[/cyan]")
+
+    console.print(f"\n[dim]Total: {total} dependency(ies)[/dim]")
+
+
+
 
 
 @logs_app.command("tail")

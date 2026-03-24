@@ -167,16 +167,32 @@ def save_skill_from_dict(
     )
 
 
+def _tag_file(name: str, tag_name: str, base: Path | None = None) -> Path:
+    return skill_dir(name, base) / f"_tag_{tag_name}"
+
+
+def _is_version_string(s: str) -> bool:
+    """Return True if s looks like a semantic version (v1.2.3)."""
+    import re
+    return bool(re.match(r"^v\d+\.\d+\.\d+$", s))
+
+
 def load_skill(
     name: str,
     version: str | None = None,
     base: Path | None = None,
 ) -> dict[str, Any]:
-    """Load a skill by name (and optional version). Raises FileNotFoundError."""
+    """Load a skill by name (and optional version or tag). Raises FileNotFoundError."""
     if version is None:
         version = get_current_version(name, base)
         if version is None:
             raise FileNotFoundError(f"Skill '{name}' not found.")
+    elif not _is_version_string(version):
+        # Treat as a tag alias
+        tf = _tag_file(name, version, base)
+        if not tf.exists():
+            raise FileNotFoundError(f"Skill '{name}@{version}' not found (no such tag).")
+        version = tf.read_text(encoding="utf-8").strip()
 
     vf = _version_file(name, version, base)
     if not vf.exists():
@@ -422,3 +438,134 @@ def render_skill_prompt(
     result["schemas"] = "\n".join(schema_lines)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Tag management (Phase 2.5)
+# ---------------------------------------------------------------------------
+
+
+def tag_skill(
+    name: str,
+    tag_name: str,
+    version: str | None = None,
+    base: Path | None = None,
+) -> str:
+    """Create a tag alias pointing to a specific (or current) version.
+
+    Returns the version that was tagged.
+    """
+    d = skill_dir(name, base)
+    if not d.exists():
+        raise FileNotFoundError(f"Skill '{name}' not found.")
+
+    if version is None:
+        version = get_current_version(name, base)
+        if version is None:
+            raise FileNotFoundError(f"Skill '{name}' has no versions.")
+    else:
+        vf = _version_file(name, version, base)
+        if not vf.exists():
+            raise FileNotFoundError(f"Skill '{name}@{version}' not found.")
+
+    _tag_file(name, tag_name, base).write_text(version, encoding="utf-8")
+    return version
+
+
+def list_tags(name: str, base: Path | None = None) -> dict[str, str]:
+    """Return a dict of {tag_name: version} for a skill."""
+    d = skill_dir(name, base)
+    if not d.exists():
+        return {}
+    return {
+        f.name[len("_tag_"):]: f.read_text(encoding="utf-8").strip()
+        for f in d.iterdir()
+        if f.name.startswith("_tag_")
+    }
+
+
+# ---------------------------------------------------------------------------
+# Clone (Phase 2.5)
+# ---------------------------------------------------------------------------
+
+
+def clone_skill(
+    name: str,
+    new_name: str,
+    base: Path | None = None,
+) -> str:
+    """Clone a skill to a new name, resetting the version to v0.0.1.
+
+    Returns the new version string ('v0.0.1').
+    """
+    if not skill_dir(name, base).exists():
+        raise FileNotFoundError(f"Skill '{name}' not found.")
+    if skill_dir(new_name, base).exists():
+        raise FileExistsError(f"Skill '{new_name}' already exists.")
+
+    data = load_skill(name, base=base)
+
+    # Reset identity fields
+    data["name"] = new_name
+    data["version"] = "v0.0.1"
+    data["changelog"] = f"Cloned from '{name}'"
+    data["created_at"] = datetime.now(tz=timezone.utc).isoformat()
+
+    d = skill_dir(new_name, base)
+    d.mkdir(parents=True, exist_ok=True)
+
+    with _version_file(new_name, "v0.0.1", base).open("w", encoding="utf-8") as f:
+        yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    _current_file(new_name, base).write_text("v0.0.1", encoding="utf-8")
+    return "v0.0.1"
+
+
+# ---------------------------------------------------------------------------
+# Dependency listing (Phase 2.5)
+# ---------------------------------------------------------------------------
+
+
+def get_skill_deps(
+    name: str,
+    version: str | None = None,
+    base: Path | None = None,
+) -> dict[str, list[str]]:
+    """Return all asset dependencies declared by a skill.
+
+    Returns a dict with keys 'prompts', 'schemas', 'rules', 'context'.
+    Each value is a list of ref strings (e.g. 'code-reviewer-system@v0.1.0').
+    """
+    data = load_skill(name, version, base)
+    assets = data.get("assets") or {}
+
+    deps: dict[str, list[str]] = {
+        "prompts": [],
+        "schemas": [],
+        "rules": [],
+        "context": [],
+    }
+
+    # Prompts
+    prompts = assets.get("prompts") or {}
+    if isinstance(prompts, dict):
+        for ref in prompts.values():
+            if ref:
+                deps["prompts"].append(str(ref))
+
+    # Schemas
+    schemas = assets.get("schemas") or []
+    if isinstance(schemas, list):
+        deps["schemas"] = [str(r) for r in schemas]
+
+    # Rules
+    rules = assets.get("rules") or []
+    if isinstance(rules, list):
+        deps["rules"] = [str(r) for r in rules]
+
+    # Context
+    ctx = assets.get("context")
+    if ctx:
+        deps["context"] = [str(ctx)]
+
+    return deps
