@@ -416,7 +416,7 @@ Blueprint（工作流编排）
 
 **目标**：实现 Harness 配置组合、Agent 持续运行、上下文管理。
 
-### Phase 3.1：Harness 数据模型
+### Phase 3.1：Harness 数据模型 ✅
 **任务**：
 1. Harness YAML 格式
    ```yaml
@@ -451,8 +451,8 @@ Blueprint（工作流编排）
 3. 实现 `harnesskit harness create`
 
 **验收标准**：
-- Harness 结构正确
-- 能引用多个 Skills
+- ✅ Harness 结构正确
+- ✅ 能引用多个 Skills
 
 ---
 

@@ -843,6 +843,118 @@ This command reads `.harness/logs/calls.jsonl` to aggregate counts. It shows all
 
 
 
+---
+
+## Phase 3 Commands Reference
+
+### `harnesskit harness` — Harness Configuration Management
+
+A **Harness** bundles multiple Skills with a shared model configuration, memory policy, and global constraints — forming a complete, versioned runtime for an Agent.
+
+#### Create / Update
+
+```bash
+# Minimal creation
+harnesskit harness create my-code-review --description "Code review harness"
+
+# With skills and model config
+harnesskit harness create my-code-review \
+  --description "Code review harness" \
+  --skills "code-reviewer@v0.1.0,explain-error@v0.0.2" \
+  --model gpt-4o \
+  --temperature 0.3 \
+  --max-tokens 2000 \
+  --memory-scope session \
+  --max-turns 10 \
+  --context-budget 4000
+
+# From a YAML file
+harnesskit harness create my-code-review --file harness.yaml
+```
+
+Harness YAML format:
+
+```yaml
+name: my-code-review
+description: "Complete code review harness"
+
+skills:
+  - code-reviewer@v0.1.0
+  - explain-error@v0.0.2
+
+model:
+  provider: openai
+  name: gpt-4o
+  temperature: 0.3
+  max_tokens: 2000
+
+memory:
+  scope: session      # session | harness | global
+  max_turns: 10
+
+constraints:
+  rules: [no-hallucination]
+  max_cost_per_call: 0.01
+  timeout: 30
+
+context_budget: 4000
+changelog: "Initial version"
+```
+
+#### Show
+
+```bash
+harnesskit harness show my-code-review           # latest version
+harnesskit harness show my-code-review@v0.0.1   # specific version
+```
+
+#### List
+
+```bash
+harnesskit harness list
+```
+
+Output:
+
+```
+                   Harnesses
+Name             Version  Skills  Model   Memory Scope  Description
+my-code-review   v0.0.1       2  gpt-4o  session       Complete code review harness
+```
+
+#### Diff two versions
+
+```bash
+harnesskit harness diff my-code-review@v0.0.1 my-code-review@v0.0.2
+```
+
+#### Validate skill references
+
+Checks that every skill referenced in the harness exists:
+
+```bash
+harnesskit harness validate my-code-review
+```
+
+Returns exit code `1` if any skill reference is broken — CI-friendly.
+
+#### Clone
+
+Copy a harness to a new name, resetting its version to `v0.0.1`:
+
+```bash
+harnesskit harness clone my-code-review my-code-review-staging
+```
+
+#### Delete
+
+```bash
+harnesskit harness delete my-code-review --yes        # all versions
+harnesskit harness delete my-code-review@v0.0.1 --yes # specific version
+```
+
+---
+
 | Command | Description |
 |---|---|
 | `harnesskit init` | Initialize workspace |
@@ -884,6 +996,13 @@ This command reads `.harness/logs/calls.jsonl` to aggregate counts. It shows all
 | `harnesskit skill run <name> --check-rules lenient` | Warn on violations, continue |
 | `harnesskit logs tail` | View recent LLM call logs |
 | `harnesskit logs search` | Search/filter call logs |
+| `harnesskit harness create <name>` | Create/update a harness |
+| `harnesskit harness show <name[@ver]>` | Display harness definition |
+| `harnesskit harness list` | List all harnesses |
+| `harnesskit harness diff <a> <b>` | Diff two harness versions |
+| `harnesskit harness validate <name>` | Validate all skill references |
+| `harnesskit harness clone <name> <new>` | Clone harness to new name (v0.0.1) |
+| `harnesskit harness delete <name[@ver]>` | Delete a harness |
 
 Use `--help` on any command for full option details:
 
@@ -928,4 +1047,4 @@ pytest tests/test_integration.py -v
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 2.6 complete** — Phase 2 集成测试: 31 end-to-end integration tests covering the full Skill workflow (init → prompts → rules → context → skill save → run → validate → log → version management). Includes performance baselines for log writes, skill saves, and search queries.
+Current status: **Phase 3.1 complete** — Harness 数据模型: full Harness CRUD, CLI commands (`create`, `show`, `list`, `diff`, `clone`, `validate`, `delete`), skill reference validation, and 50 pytest tests covering all acceptance criteria.

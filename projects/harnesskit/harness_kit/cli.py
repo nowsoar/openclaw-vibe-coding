@@ -25,6 +25,7 @@ from harness_kit import context as _context_mod
 from harness_kit import rule as _rule_mod
 from harness_kit import resolver as _resolver_mod
 from harness_kit import skill as _skill_mod
+from harness_kit import harness as _harness_mod
 from harness_kit import call_logger as _call_logger_mod
 
 app = typer.Typer(
@@ -76,6 +77,13 @@ app.add_typer(skill_app, name="skill")
 
 logs_app = typer.Typer(help="View LLM call logs.", no_args_is_help=True)
 app.add_typer(logs_app, name="logs")
+
+# ---------------------------------------------------------------------------
+# harness sub-app
+# ---------------------------------------------------------------------------
+
+harness_app = typer.Typer(help="Manage harness configurations.", no_args_is_help=True)
+app.add_typer(harness_app, name="harness")
 
 
 def _require_init() -> None:
@@ -1580,6 +1588,287 @@ def logs_search(
     console.print(table)
 
 
+# ---------------------------------------------------------------------------
+# harness create
+# ---------------------------------------------------------------------------
+
+
+@harness_app.command("create")
+def harness_create(
+    name: str = typer.Argument(..., help="Harness name (identifier)."),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Load harness definition from YAML file."),
+    description: str = typer.Option("", "--description", "-d", help="Short description."),
+    skills: str = typer.Option("", "--skills", "-s", help="Comma-separated skill refs (e.g. skill1@v0.1.0,skill2)."),
+    model_name: str = typer.Option("gpt-4o", "--model", help="LLM model name."),
+    provider: str = typer.Option("openai", "--provider", help="LLM provider."),
+    temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature."),
+    max_tokens: int = typer.Option(2000, "--max-tokens", help="Max output tokens."),
+    memory_scope: str = typer.Option("session", "--memory-scope", help="Memory scope: session/harness/global."),
+    max_turns: int = typer.Option(10, "--max-turns", help="Max conversation turns before compressing."),
+    context_budget: int = typer.Option(4000, "--context-budget", help="Context token budget."),
+    changelog: str = typer.Option("", "--changelog", help="Changelog note for this version."),
+) -> None:
+    """Create or update a harness. Accepts --file <yaml> or individual options."""
+    _require_init()
+
+    if file:
+        if not file.exists():
+            console.print(f"[red]✗ File not found:[/red] {file}")
+            raise typer.Exit(1)
+        with file.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            console.print("[red]✗ YAML file must contain a mapping.[/red]")
+            raise typer.Exit(1)
+        # Override name from argument if provided
+        data["name"] = name
+        errors = _harness_mod._validate_harness_data(data)
+        if errors:
+            console.print("[red]✗ Harness definition errors:[/red]")
+            for e in errors:
+                console.print(f"  • {e}")
+            raise typer.Exit(1)
+        version, is_new = _harness_mod.save_harness_from_dict(data)
+    else:
+        skill_list = [s.strip() for s in skills.split(",") if s.strip()] if skills else []
+        data = {
+            "name": name,
+            "description": description,
+            "skills": skill_list,
+            "model": {
+                "provider": provider,
+                "name": model_name,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+            "memory": {
+                "scope": memory_scope,
+                "max_turns": max_turns,
+            },
+            "constraints": {},
+            "context_budget": context_budget,
+            "changelog": changelog,
+        }
+        errors = _harness_mod._validate_harness_data(data)
+        if errors:
+            console.print("[red]✗ Harness definition errors:[/red]")
+            for e in errors:
+                console.print(f"  • {e}")
+            raise typer.Exit(1)
+        version, is_new = _harness_mod.save_harness_from_dict(data)
+
+    action = "[green]✓ Created[/green]" if is_new else "[blue]↑ Updated[/blue]"
+    console.print(f"{action} harness [bold]{name}[/bold] → [cyan]{version}[/cyan]")
+
+
+# ---------------------------------------------------------------------------
+# harness show
+# ---------------------------------------------------------------------------
+
+
+@harness_app.command("show")
+def harness_show(
+    ref: str = typer.Argument(..., help="Harness name or name@version."),
+) -> None:
+    """Show a harness definition."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+    try:
+        data = _harness_mod.load_harness(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold cyan]{data['name']}[/bold cyan] [dim]{data['version']}[/dim]")
+    if data.get("description"):
+        console.print(f"[dim]{data['description']}[/dim]\n")
+
+    # Skills
+    skills = data.get("skills") or []
+    if skills:
+        console.print("[bold]Skills:[/bold]")
+        for s in skills:
+            console.print(f"  • [cyan]{s}[/cyan]")
+
+    # Model
+    model = data.get("model") or {}
+    console.print("\n[bold]Model:[/bold]")
+    for k, v in model.items():
+        console.print(f"  [dim]{k}:[/dim] {v}")
+
+    # Memory
+    memory = data.get("memory") or {}
+    console.print("\n[bold]Memory:[/bold]")
+    for k, v in memory.items():
+        console.print(f"  [dim]{k}:[/dim] {v}")
+
+    # Constraints
+    constraints = data.get("constraints") or {}
+    if constraints:
+        console.print("\n[bold]Constraints:[/bold]")
+        for k, v in constraints.items():
+            console.print(f"  [dim]{k}:[/dim] {v}")
+
+    # Budget & metadata
+    console.print(f"\n[dim]context_budget:[/dim] {data.get('context_budget', 4000)} tokens")
+    console.print(f"[dim]created_at:[/dim] {data.get('created_at', 'N/A')}")
+    if data.get("changelog"):
+        console.print(f"[dim]changelog:[/dim] {data['changelog']}")
+
+
+# ---------------------------------------------------------------------------
+# harness list
+# ---------------------------------------------------------------------------
+
+
+@harness_app.command("list")
+def harness_list() -> None:
+    """List all harnesses."""
+    _require_init()
+    harnesses = _harness_mod.list_harnesses()
+    if not harnesses:
+        console.print("[dim]No harnesses found. Use [bold]harnesskit harness create[/bold] to create one.[/dim]")
+        return
+
+    table = Table(title="Harnesses", show_lines=False)
+    table.add_column("Name", style="bold cyan")
+    table.add_column("Version", style="dim")
+    table.add_column("Skills", justify="right")
+    table.add_column("Model")
+    table.add_column("Memory Scope")
+    table.add_column("Description")
+
+    for h in harnesses:
+        skill_count = str(len(h.get("skills") or []))
+        model_name = (h.get("model") or {}).get("name", "?")
+        memory_scope = (h.get("memory") or {}).get("scope", "?")
+        table.add_row(
+            h.get("name", "?"),
+            h.get("version", "?"),
+            skill_count,
+            model_name,
+            memory_scope,
+            h.get("description", ""),
+        )
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
+# harness diff
+# ---------------------------------------------------------------------------
+
+
+@harness_app.command("diff")
+def harness_diff(
+    ref_a: str = typer.Argument(..., help="First harness ref (name@version or name)."),
+    ref_b: str = typer.Argument(..., help="Second harness ref (name@version or name)."),
+) -> None:
+    """Show diff between two harness versions."""
+    _require_init()
+    name_a, ver_a = _parse_name_version(ref_a)
+    name_b, ver_b = _parse_name_version(ref_b)
+    try:
+        lines = _harness_mod.diff_harnesses(name_a, ver_a, name_b, ver_b)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    if not lines:
+        console.print("[dim]No differences found.[/dim]")
+        return
+
+    for line in lines:
+        line = line.rstrip("\n")
+        if line.startswith("+++") or line.startswith("---"):
+            console.print(f"[bold]{line}[/bold]")
+        elif line.startswith("+"):
+            console.print(f"[green]{line}[/green]")
+        elif line.startswith("-"):
+            console.print(f"[red]{line}[/red]")
+        elif line.startswith("@@"):
+            console.print(f"[cyan]{line}[/cyan]")
+        else:
+            console.print(line)
+
+
+# ---------------------------------------------------------------------------
+# harness clone
+# ---------------------------------------------------------------------------
+
+
+@harness_app.command("clone")
+def harness_clone(
+    name: str = typer.Argument(..., help="Source harness name."),
+    new_name: str = typer.Argument(..., help="New harness name."),
+) -> None:
+    """Clone a harness to a new name (resets version to v0.0.1)."""
+    _require_init()
+    try:
+        _harness_mod.clone_harness(name, new_name)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+    except FileExistsError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]✓ Cloned[/green] [bold]{name}[/bold] → [bold]{new_name}[/bold] [dim](v0.0.1)[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# harness validate
+# ---------------------------------------------------------------------------
+
+
+@harness_app.command("validate")
+def harness_validate(
+    ref: str = typer.Argument(..., help="Harness name or name@version."),
+) -> None:
+    """Validate that all skill references in a harness exist."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+    errors = _harness_mod.validate_harness_references(name, version)
+    if not errors:
+        console.print(f"[green]✓ All references in [bold]{ref}[/bold] are valid.[/green]")
+    else:
+        console.print(f"[red]✗ Found {len(errors)} broken reference(s) in [bold]{ref}[/bold]:[/red]")
+        for e in errors:
+            console.print(f"  • {e}")
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# harness delete
+# ---------------------------------------------------------------------------
+
+
+@harness_app.command("delete")
+def harness_delete(
+    ref: str = typer.Argument(..., help="Harness name or name@version."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Delete a harness or a specific version."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    target = f"harness [bold]{name}[/bold]"
+    if version:
+        target += f" version [bold]{version}[/bold]"
+    else:
+        target += " [dim](all versions)[/dim]"
+
+    if not yes:
+        confirmed = typer.confirm(f"Delete {name}{'@' + version if version else ''}?")
+        if not confirmed:
+            console.print("[dim]Aborted.[/dim]")
+            raise typer.Exit(0)
+
+    try:
+        _harness_mod.delete_harness(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓ Deleted[/green] {target}")
 
 
 
