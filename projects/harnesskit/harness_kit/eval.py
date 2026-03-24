@@ -1,10 +1,13 @@
-"""Eval system — Test Suite data model and storage (Phase 5.1)."""
+"""Eval system — Test Suite data model, storage, and runner (Phase 5.1/5.3)."""
 
 from __future__ import annotations
 
+import json
 import re
+import time as _time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -201,3 +204,141 @@ def suite_summary(data: dict[str, Any]) -> dict[str, Any]:
         "case_count": len(cases),
         "assertion_count": assertion_count,
     }
+
+
+# ---------------------------------------------------------------------------
+# Eval runner (Phase 5.3)
+# ---------------------------------------------------------------------------
+
+
+def _parse_output(text: str) -> Any:
+    """Try to parse LLM output text as JSON. Falls back to the raw string."""
+    stripped = text.strip()
+    # Direct JSON object or array
+    if stripped.startswith(("{", "[")):
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+    # Markdown fenced code block
+    m = re.search(r"```(?:json)?\s*\n([\s\S]*?)\n?```", stripped)
+    if m:
+        try:
+            return json.loads(m.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+    return text  # return as plain string
+
+
+def run_eval(
+    target: str,
+    suite_name: str,
+    invoke_fn: Callable[[dict[str, Any]], tuple[str, int, int, float]],
+    base: Path | None = None,
+) -> dict[str, Any]:
+    """Run a test suite against a skill or harness.
+
+    Parameters
+    ----------
+    target:
+        Display label for the target (e.g. ``'code-reviewer@v0.1.0'``).
+    suite_name:
+        Name of the test suite to execute.
+    invoke_fn:
+        Callable ``(inputs: dict) -> (output_text, input_tokens, output_tokens, duration)``.
+        Responsible for calling the LLM/skill/harness and returning its raw output.
+    base:
+        Optional path override for the ``.harness/`` directory root.
+
+    Returns
+    -------
+    dict
+        Full evaluation report (also persisted to ``.harness/evals/results/``).
+    """
+    from harness_kit.assertions import run_assertions, assertions_passed, assertion_summary
+
+    suite = load_suite(suite_name, base)
+    cases = suite.get("cases") or []
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    case_results: list[dict[str, Any]] = []
+    total_passed = 0
+    total_failed = 0
+
+    for case in cases:
+        case_id = case.get("id", "?")
+        case_name = case.get("name", "")
+        inputs: dict[str, Any] = case.get("inputs") or {}
+        assertions = case.get("assertions") or []
+
+        case_result: dict[str, Any] = {
+            "id": case_id,
+            "name": case_name,
+            "status": "error",
+            "duration": 0.0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "assertions": [],
+        }
+
+        try:
+            output_text, input_tokens, output_tokens, duration = invoke_fn(inputs)
+            case_result["duration"] = round(duration, 3)
+            case_result["input_tokens"] = input_tokens
+            case_result["output_tokens"] = output_tokens
+            case_result["output_preview"] = output_text[:200]
+
+            data = _parse_output(output_text)
+
+            assertion_results = run_assertions(assertions, data)
+            passed = assertions_passed(assertion_results)
+            summary = assertion_summary(assertion_results)
+
+            case_result["status"] = "passed" if passed else "failed"
+            case_result["assertions"] = [
+                {
+                    "type": r.assertion_type,
+                    "path": r.path,
+                    "passed": r.passed,
+                    "message": r.message,
+                }
+                for r in assertion_results
+            ]
+            case_result["assertion_summary"] = summary
+
+            if passed:
+                total_passed += 1
+            else:
+                total_failed += 1
+
+        except Exception as exc:
+            case_result["status"] = "error"
+            case_result["error"] = str(exc)
+            total_failed += 1
+
+        case_results.append(case_result)
+
+    total = len(cases)
+    report: dict[str, Any] = {
+        "timestamp": timestamp,
+        "target": target,
+        "suite": suite_name,
+        "summary": {
+            "total": total,
+            "passed": total_passed,
+            "failed": total_failed,
+        },
+        "cases": case_results,
+    }
+
+    # Persist result
+    rdir = results_dir(base)
+    rdir.mkdir(parents=True, exist_ok=True)
+    # Build filesystem-safe timestamp string
+    ts_safe = re.sub(r"[:\+\.]", "-", timestamp)[:23]
+    result_file = rdir / f"{ts_safe}.json"
+    with result_file.open("w", encoding="utf-8") as fh:
+        json.dump(report, fh, ensure_ascii=False, indent=2)
+
+    report["_result_file"] = str(result_file)
+    return report

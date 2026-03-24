@@ -3327,5 +3327,161 @@ def eval_delete(
     console.print(f"[green]✓ Test suite '{name}' deleted.[/green]")
 
 
+# ---------------------------------------------------------------------------
+# eval run
+# ---------------------------------------------------------------------------
+
+
+@eval_app.command("run")
+def eval_run(
+    target: str = typer.Argument(
+        ...,
+        help="Skill (or harness) to evaluate, e.g. 'my-skill' or 'my-skill@v0.1.0'.",
+    ),
+    suite: str = typer.Option(
+        ..., "--suite", "-s",
+        help="Test suite name.",
+    ),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override model."),
+    ci: bool = typer.Option(
+        False, "--ci",
+        help="CI mode: exit with non-zero code when any test case fails.",
+    ),
+) -> None:
+    """Run a test suite against a skill and generate an evaluation report."""
+    _require_init()
+
+    # Validate suite exists
+    try:
+        _eval_mod.load_suite(suite)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    # Resolve target → skill name + version
+    skill_name, skill_version = _parse_name_version(target)
+
+    # Load skill (only skills supported for now; harness support is future)
+    try:
+        skill_data = _skill_mod.load_skill(skill_name, skill_version)
+        actual_version = skill_data.get("version", "?")
+        target_label = f"{skill_name}@{actual_version}"
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    # Build LLM config
+    cfg = read_config()
+    llm_config = LLMConfig.from_harness_config(cfg, overrides={"model": model} if model else {})
+
+    if not llm_config.api_key:
+        console.print(
+            "[red]✗ No API key found.[/red] "
+            "Set [bold]OPENAI_API_KEY[/bold] environment variable or configure [cyan].harness/config.yaml[/cyan]."
+        )
+        raise typer.Exit(1)
+
+    # Pre-render skill prompt (done once, reused per case)
+    try:
+        rendered = _skill_mod.render_skill_prompt(skill_name, skill_version)
+    except Exception as e:
+        console.print(f"[red]✗ Failed to render skill: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Build invoke_fn
+    def _invoke(inputs: dict) -> tuple[str, int, int, float]:
+        vars_dict: dict[str, str] = {k: str(v) for k, v in inputs.items()}
+        # Apply skill input defaults
+        for inp in skill_data.get("inputs") or []:
+            iname = inp.get("name")
+            if iname and iname not in vars_dict and inp.get("default") is not None:
+                vars_dict[iname] = str(inp["default"])
+        msgs = build_messages(skill_data, rendered, vars_dict)
+        resp = call_llm(msgs, llm_config, stream=False)
+        return resp.content, resp.input_tokens, resp.output_tokens, resp.duration
+
+    # Run eval with progress display
+    suite_data = _eval_mod.load_suite(suite)
+    cases = suite_data.get("cases") or []
+    total = len(cases)
+
+    console.print(
+        f"\n[bold cyan]Eval:[/bold cyan] [bold]{target_label}[/bold]  "
+        f"suite=[bold]{suite}[/bold]  cases={total}\n"
+    )
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Running…", total=total)
+        try:
+            report = _eval_mod.run_eval(
+                target=target_label,
+                suite_name=suite,
+                invoke_fn=_invoke,
+            )
+        except Exception as e:
+            console.print(f"[red]✗ Eval failed: {e}[/red]")
+            raise typer.Exit(1)
+        progress.update(task, completed=total)
+
+    # Display results table
+    summary = report["summary"]
+    passed = summary["passed"]
+    failed = summary["failed"]
+    result_file = report.get("_result_file", "")
+
+    table = Table(title=f"Eval Results — {target_label}", show_lines=False)
+    table.add_column("ID", style="cyan")
+    table.add_column("Name")
+    table.add_column("Status", justify="center")
+    table.add_column("Duration", justify="right")
+    table.add_column("Tokens", justify="right")
+    table.add_column("Assertions", justify="right")
+
+    for case in report["cases"]:
+        status = case["status"]
+        color = "green" if status == "passed" else ("red" if status == "failed" else "yellow")
+        icon = "✓" if status == "passed" else ("✗" if status == "failed" else "!")
+        asrt = case.get("assertion_summary", {})
+        asrt_str = f"{asrt.get('passed', 0)}/{asrt.get('total', 0)}" if asrt else "-"
+        tokens = case.get("input_tokens", 0) + case.get("output_tokens", 0)
+        table.add_row(
+            case["id"],
+            case.get("name", ""),
+            f"[{color}]{icon} {status}[/{color}]",
+            f"{case['duration']:.2f}s",
+            str(tokens) if tokens else "-",
+            asrt_str,
+        )
+
+    console.print(table)
+
+    # Print failed assertion details
+    for case in report["cases"]:
+        if case["status"] != "passed":
+            console.print(f"\n[bold red]✗ {case['id']}[/bold red] — {case.get('name', '')}")
+            if case.get("error"):
+                console.print(f"  [red]Error: {case['error']}[/red]")
+            for a in case.get("assertions") or []:
+                if not a.get("passed"):
+                    console.print(f"  [yellow]FAIL[/yellow] [{a['type']}] {a['message']}")
+
+    pass_color = "green" if failed == 0 else "red"
+    console.print(
+        f"\n[bold]Summary:[/bold] total={total}  "
+        f"[green]passed={passed}[/green]  [{pass_color}]failed={failed}[/{pass_color}]"
+    )
+    if result_file:
+        console.print(f"[dim]Report saved: {result_file}[/dim]")
+
+    if ci and failed > 0:
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     main()

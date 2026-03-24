@@ -1778,6 +1778,108 @@ print(summary)  # {"total": 4, "passed": 4, "failed": 0}
 
 ---
 
+## Phase 5.3 — Single Eval Run
+
+`harnesskit eval run` executes a test suite against a skill, evaluates every assertion, and generates a full evaluation report.
+
+### Running an eval
+
+```bash
+# Run the test suite "code-review-suite" against skill "code-reviewer"
+harnesskit eval run code-reviewer --suite code-review-suite
+
+# Pin to a specific version
+harnesskit eval run code-reviewer@v0.2.0 --suite code-review-suite
+
+# Override the LLM model
+harnesskit eval run code-reviewer --suite code-review-suite --model gpt-4o-mini
+
+# CI mode: exit with code 1 when any test case fails
+harnesskit eval run code-reviewer --suite code-review-suite --ci
+```
+
+### Output example
+
+```
+Eval: code-reviewer@v0.1.0  suite=code-review-suite  cases=2
+
+ ID           Name              Status       Duration  Tokens  Assertions
+ detect-bug   发现除零错误       ✓ passed     1.23s     350     2/2
+ empty-func   空函数检查         ✗ failed     0.98s     290     0/1
+
+✗ empty-func — 空函数检查
+  FAIL [contains] FAIL — '$.issues[*].message' does not contain '缺少实现'. Actual: ...
+
+Summary: total=2  passed=1  failed=1
+Report saved: .harness/evals/results/2026-03-24T10-00-00-000.json
+```
+
+### Result report format
+
+Each run persists a JSON report to `.harness/evals/results/{timestamp}.json`:
+
+```json
+{
+  "timestamp": "2026-03-24T10:00:00+00:00",
+  "target": "code-reviewer@v0.1.0",
+  "suite": "code-review-suite",
+  "summary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1
+  },
+  "cases": [
+    {
+      "id": "detect-bug",
+      "name": "发现除零错误",
+      "status": "passed",
+      "duration": 1.23,
+      "input_tokens": 200,
+      "output_tokens": 150,
+      "output_preview": "{\"issues\": [{\"type\": \"ZeroDivisionError\" ...}",
+      "assertions": [
+        {
+          "type": "contains",
+          "path": "$.issues[*].type",
+          "passed": true,
+          "message": "OK — '$.issues[*].type' contains 'ZeroDivisionError'"
+        }
+      ],
+      "assertion_summary": {"total": 2, "passed": 2, "failed": 0}
+    }
+  ]
+}
+```
+
+### LLM output parsing
+
+The eval runner automatically tries to parse each LLM response as JSON so that JSONPath assertions can navigate it:
+
+1. Direct JSON object or array → parsed with `json.loads`
+2. Markdown fenced code block (` ```json ... ``` `) → extracted and parsed
+3. Anything else → left as a raw string (string assertions still work)
+
+### `run_eval` Python API
+
+You can use the eval runner from your own code without going through the CLI:
+
+```python
+from harness_kit.eval import run_eval
+
+def my_invoke(inputs: dict) -> tuple[str, int, int, float]:
+    # Call your LLM here and return (output_text, input_tokens, output_tokens, duration)
+    return '{"issues": [{"type": "ok"}], "summary": "looks fine"}', 100, 50, 1.2
+
+report = run_eval(
+    target="my-skill@v0.1.0",
+    suite_name="code-review-suite",
+    invoke_fn=my_invoke,
+)
+print(report["summary"])  # {"total": 1, "passed": 1, "failed": 0}
+```
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -1813,4 +1915,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 5.2 complete** — Eval Engine: Assertion Engine with JSONPath navigation (`jsonpath-ng`), all four assertion types (`contains`, `regex`, `json_schema`, `custom`), result dataclass with `passed/message/actual/expected` fields, and `run_assertions` / `assertions_passed` / `assertion_summary` helpers. 51 new pytest tests (all passing).
+Current status: **Phase 5.3 complete** — Eval Engine: Single Eval Run — `harnesskit eval run <skill> --suite <suite>` calls the LLM for every test case, evaluates all assertions via JSONPath, generates a structured JSON report saved to `.harness/evals/results/`, and supports `--ci` mode (exit 1 on failure). 25 new pytest tests (all passing, 979 total).

@@ -800,7 +800,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 5.3：单次评估运行
+### Phase 5.3：单次评估运行 ✅
 **任务**：
 1. 实现 `harnesskit eval run <skill/harness> --suite <suite-name>`
    - 加载 Test Suite
@@ -833,8 +833,8 @@ Blueprint（工作流编排）
 3. 保存结果到 `.harness/evals/results/{timestamp}.json`
 
 **验收标准**：
-- 能正确运行测试套件
-- 报告信息完整
+- ✅ 能正确运行测试套件
+- ✅ 报告信息完整
 
 ---
 
