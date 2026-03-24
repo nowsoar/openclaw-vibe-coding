@@ -412,6 +412,208 @@ Returns exit code `1` if broken references or cycles are found, making it CI-fri
 
 ---
 
+## Skill End-to-End Tutorial
+
+A **Skill** bundles a prompt, rules, context, and I/O schema into a versioned, runnable unit. Here is the full workflow.
+
+### Step 1 — Create the raw assets
+
+```bash
+harnesskit init
+
+# System prompt
+harnesskit prompt save code-reviewer-system \
+  --content "You are a senior {{language}} engineer. Review the code and return a JSON list of issues." \
+  --description "Code reviewer system prompt" \
+  --tags "code,review"
+
+# User prompt
+harnesskit prompt save code-reviewer-user \
+  --content "Review this code:\n{{code}}" \
+  --description "Code reviewer user prompt"
+
+# Hard rule — blocks speculative output
+harnesskit rule add no-speculation \
+  --type hard \
+  --pattern "I think|probably|我猜测|可能是" \
+  --description "Do not speculate — only report confirmed issues" \
+  --fix-hint "Remove speculative language; only state confirmed findings"
+
+# Soft rule — injected into system prompt
+harnesskit rule add output-json \
+  --type soft \
+  --pattern "." \
+  --description "Always return output as valid JSON"
+
+# Context template
+cat > review_ctx.yaml << 'EOF'
+description: Code review context
+slots:
+  - name: language
+    required: true
+  - name: code
+    required: true
+template: |
+  Review the following {{language}} code:
+  {{code}}
+EOF
+harnesskit context save review-ctx --file review_ctx.yaml
+```
+
+### Step 2 — Define the Skill YAML
+
+```yaml
+# code-reviewer.yaml
+name: code-reviewer
+description: "Reviews code and outputs a list of issues"
+trigger: "When code needs review"
+
+inputs:
+  - name: code
+    type: string
+    required: true
+  - name: language
+    type: string
+    default: "auto"
+
+outputs:
+  - name: issues
+    type: array
+
+assets:
+  prompts:
+    system: code-reviewer-system
+    user: code-reviewer-user
+  rules:
+    - no-speculation
+    - output-json
+  context: review-ctx
+
+examples:
+  - input:
+      code: "def foo(): pass"
+      language: python
+    expected_contains: ["缺少实现"]
+
+changelog: "Initial version"
+```
+
+```bash
+harnesskit skill save code-reviewer --file code-reviewer.yaml
+```
+
+### Step 3 — Validate and inspect
+
+```bash
+# Check all referenced assets resolve correctly
+harnesskit skill validate code-reviewer
+
+# Preview assembled prompts without calling the LLM
+harnesskit skill run code-reviewer \
+  --var "code=def foo(): pass" \
+  --var language=python \
+  --dry-run
+
+# Show all asset dependencies
+harnesskit skill deps code-reviewer
+```
+
+### Step 4 — Run the Skill
+
+```bash
+# Set your API key
+export OPENAI_API_KEY=sk-...
+
+# Run with default (lenient) rule checking
+harnesskit skill run code-reviewer \
+  --var "code=def divide(a, b): return a/b" \
+  --var language=python
+
+# Run with strict rule checking (hard rule violation = non-zero exit)
+harnesskit skill run code-reviewer \
+  --var "code=def divide(a, b): return a/b" \
+  --check-rules strict
+
+# Stream output token by token
+harnesskit skill run code-reviewer \
+  --var "code=def divide(a, b): return a/b" \
+  --stream
+```
+
+### Step 5 — Version management
+
+```bash
+# Iterate: save a new version (patch auto-increments)
+harnesskit skill save code-reviewer --file code-reviewer-v2.yaml
+harnesskit skill diff code-reviewer@v0.0.1 code-reviewer@v0.0.2
+
+# Tag a version for deployment
+harnesskit skill tag code-reviewer --name production
+
+# Run the production-tagged version
+harnesskit skill run code-reviewer@production --var "code=x=1"
+
+# Clone to experiment without touching the original
+harnesskit skill clone code-reviewer code-reviewer-experimental
+```
+
+### Step 6 — Observe
+
+```bash
+# View recent calls
+harnesskit logs tail
+
+# Search by skill name
+harnesskit logs search --skill code-reviewer
+
+# Check violation statistics
+harnesskit rule stats
+```
+
+---
+
+## Skill Design Best Practices
+
+### 1. One skill = one responsibility
+A skill should do exactly one thing. If you find yourself adding many branches to the prompt, split it into multiple skills.
+
+### 2. Keep system prompts focused
+The system prompt sets the agent's role and output format. User prompts and context templates provide the variable content. Keep them separate so each can be versioned independently.
+
+### 3. Always define inputs and outputs
+Even if you don't validate them at runtime yet, explicit `inputs` and `outputs` act as documentation and make the skill self-describing. Use `required: true` on fields that must be present.
+
+### 4. Use hard rules for non-negotiable constraints
+Hard rules run **after** the LLM responds and will block or warn on violations. Use them for:
+- Output format requirements (e.g. must be JSON)
+- Content safety (e.g. no speculative language)
+- Length limits
+
+Use `--check-rules strict` in CI and `--check-rules lenient` during development.
+
+### 5. Use soft rules to guide behaviour
+Soft rules are injected into the system prompt as plain text instructions. Use them for stylistic guidance that you want the model to follow but which doesn't need post-hoc enforcement.
+
+### 6. Pin asset versions for production
+Use tag aliases (`@production`, `@stable`) rather than floating references so a tag promotion is an explicit, auditable act:
+
+```bash
+# Promote v0.0.3 to production
+harnesskit skill tag code-reviewer --name production --version v0.0.3
+```
+
+### 7. Add examples
+The `examples` field in a skill YAML is documentation for now — it will feed the evaluation engine in Phase 5. Fill it in from the start so you build a regression dataset as you iterate.
+
+### 8. Run `doctor` before committing
+`harnesskit doctor` scans for broken references and unreferenced assets. Run it as a pre-commit check:
+
+```bash
+harnesskit doctor && git add .harness/ && git commit -m "Update skill definitions"
+```
+
+---
+
 ## Phase 2 Commands Reference
 
 ### `harnesskit skill` — Skill Version Management (Phase 2.5)
@@ -726,4 +928,4 @@ pytest tests/test_integration.py -v
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 2.5 complete** — Skill 版本管理进阶: tag aliases (`skill tag`), skill cloning (`skill clone`), and dependency listing (`skill deps`).
+Current status: **Phase 2.6 complete** — Phase 2 集成测试: 31 end-to-end integration tests covering the full Skill workflow (init → prompts → rules → context → skill save → run → validate → log → version management). Includes performance baselines for log writes, skill saves, and search queries.
