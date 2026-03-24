@@ -1472,24 +1472,28 @@ Blueprint 'my-pipeline@v0.0.1' — Validation Report
 
 ---
 
-### Blueprint Executor — Running Deterministic Steps (Phase 4.3)
+### Blueprint Executor — Deterministic & Agentic Steps (Phase 4.3 + 4.4)
 
-`harnesskit blueprint run` executes a blueprint's steps in order, providing real-time progress output.
+`harnesskit blueprint run` executes a blueprint's steps in order, providing real-time progress output.  Both `type: deterministic` (shell) and `type: agentic` (LLM) steps are fully supported.
 
 **Key features:**
 
 | Feature | Description |
 |---|---|
 | **Shell command execution** | `type: deterministic` steps run via `subprocess` with stdout/stderr capture |
-| **Timeout control** | Each step respects its `timeout` value (default 60 s) |
+| **Agentic step execution** | `type: agentic` steps call a **Skill** or **Harness** via LLM |
+| **Harness model config** | When a step references a `harness:`, its `model:` settings override global defaults |
+| **Retry with back-off** | `max_retries: N` retries on transient errors (rate-limit, 429, 503…) with exponential back-off |
+| **Timeout control** | Each step respects its `timeout` value (default 60 s for deterministic, 120 s for agentic) |
 | **Variable interpolation** | `{{inputs.x}}`, `{{steps.id.output}}`, `{{env.VAR}}` resolved at runtime |
 | **`on_fail: stop`** | Abort pipeline, mark remaining steps as skipped |
 | **`on_fail: continue`** | Continue to next step despite failure |
 | **`on_fail: goto:<id>`** | Jump to a specific step for error recovery |
-| **`--dry-run`** | Render all commands without executing (safe preview) |
+| **`--dry-run`** | Render all commands / show agentic refs without executing |
 | **`--step <id>`** | Resume from a specific step (skip earlier ones) |
 | **`--verbose`** | Print stdout/stderr for every step |
 | **Output resolution** | Blueprint `outputs` block resolved against step results |
+| **Call logging** | Agentic steps log to `.harness/logs/calls.jsonl` |
 
 **Example:**
 
@@ -1550,8 +1554,34 @@ Outputs:
 ✓ Blueprint 'lint-pipeline' completed successfully (0.36s)
 ```
 
-> **Note:** `type: agentic` steps (Harness / Skill calls) are skipped with a
-> placeholder message until Phase 4.4 implements the agentic executor.
+**Agentic step example** — mix shell commands with LLM calls:
+
+```yaml
+steps:
+  - id: lint
+    type: deterministic
+    run: "flake8 {{inputs.file_path}}"
+    on_fail: continue
+
+  - id: review
+    type: agentic
+    name: "AI code review"
+    skill: code-reviewer@v0.1.0          # or use harness: my-harness@v0.1.0
+    inputs:
+      code: "{{steps.lint.output}}"
+    max_retries: 2
+    timeout: 60
+
+  - id: summary
+    type: agentic
+    skill: summarize@v0.1.0
+    inputs:
+      text: "{{steps.review.output}}"
+```
+
+```bash
+harnesskit blueprint run my-pipeline --var file_path=app.py
+```
 
 ---
 
@@ -1590,4 +1620,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 4.3 complete** — Blueprint deterministic node executor: `blueprint run` executes shell-command steps with stdout/stderr capture, timeout control, `on_fail` branching (`stop` / `continue` / `goto:<id>`), `{{inputs.x}}` / `{{steps.id.output}}` / `{{env.VAR}}` interpolation, `--dry-run`, `--step <id>`, and `--verbose` flags. 43 new pytest tests (780 total, 100 % passing).
+Current status: **Phase 4.4 complete** — Agentic node executor: `type: agentic` steps in blueprints now call a Skill or Harness via LLM, with exponential-backoff retries (`max_retries`), configurable timeout, harness model-config propagation, `on_fail` branching, and call logging to `.harness/logs/calls.jsonl`. 23 new pytest tests (803 total, 100 % passing).

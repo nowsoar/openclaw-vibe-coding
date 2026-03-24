@@ -666,7 +666,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 4.4：Agentic 节点执行器
+### Phase 4.4：Agentic 节点执行器 ✅
 **任务**：
 1. 调用 Harness/Skill
    - 根据配置调用对应的 Harness 或 Skill
@@ -682,8 +682,8 @@ Blueprint（工作流编排）
    - 记录失败原因
 
 **验收标准**：
-- Agentic 节点正确调用
-- 重试机制工作正常
+- ✅ Agentic 节点正确调用
+- ✅ 重试机制工作正常
 
 ---
 

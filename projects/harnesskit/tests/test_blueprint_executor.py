@@ -232,13 +232,14 @@ class TestExecuteBlueprint:
         assert result.status == "stopped"
         assert "nonexistent" in (result.stop_reason or "")
 
-    def test_agentic_step_skipped(self):
+    def test_agentic_step_fails_when_skill_missing(self, tmp_path):
+        """Agentic step returns failed when the referenced skill doesn't exist."""
         bp = _simple_blueprint([
-            {"id": "ai_step", "type": "agentic", "harness": "some-harness@v0.1.0"},
+            {"id": "ai_step", "type": "agentic", "skill": "nonexistent-skill"},
         ])
-        result = execute_blueprint(bp, {})
-        assert result.steps[0].status == "skipped"
-        assert "Phase 4.4" in result.steps[0].output
+        result = execute_blueprint(bp, {}, base=tmp_path)
+        assert result.steps[0].step_type == "agentic"
+        assert result.steps[0].status == "failed"
 
     def test_input_variable_interpolated(self):
         bp = {

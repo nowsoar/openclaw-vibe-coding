@@ -2978,7 +2978,7 @@ def blueprint_run(
     """Run a blueprint — execute its steps in order.
 
     Deterministic steps (shell commands) are executed immediately.
-    Agentic steps are skipped until Phase 4.4.
+    Agentic steps call the configured Skill or Harness via LLM.
     """
     from harness_kit import blueprint_executor as _exec_mod
 
@@ -3028,6 +3028,7 @@ def blueprint_run(
         inputs,
         dry_run=dry_run,
         start_step=start_step,
+        base=Path.cwd(),
     )
 
     # Display step results

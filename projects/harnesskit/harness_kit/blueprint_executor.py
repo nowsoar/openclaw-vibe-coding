@@ -1,22 +1,24 @@
 """
-Blueprint deterministic node executor — Phase 4.3.
+Blueprint node executor — Phase 4.3 (deterministic) + Phase 4.4 (agentic).
 
 Supports:
   - Shell command execution via subprocess
   - stdout/stderr capture and timeout control
   - on_fail: stop / continue / goto:<step_id>
   - Variable interpolation: {{inputs.x}}, {{steps.y.output}}, {{env.VAR}}
-  - Python callable steps (future extension, type="python")
+  - Agentic steps: call Skill or Harness via LLM with retries and timeout
   - dry_run mode (renders commands without executing)
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import re
 import subprocess
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 
@@ -167,6 +169,175 @@ def run_deterministic_step(
 
 
 # ---------------------------------------------------------------------------
+# Agentic step execution
+# ---------------------------------------------------------------------------
+
+
+def run_agentic_step(
+    step: dict[str, Any],
+    context: dict[str, Any],
+    base: Optional[Path] = None,
+) -> StepResult:
+    """Execute an agentic step by calling a Skill or Harness via LLM.
+
+    Reads ``step["skill"]`` or ``step["skill"]`` to identify the target, interpolates
+    ``step["inputs"]`` from *context*, calls the LLM, and returns a
+    :class:`StepResult` whose ``output`` is the raw LLM response text.
+
+    Retry behaviour is controlled by ``step["max_retries"]`` (default 0) with
+    exponential back-off.  Hard timeout is enforced via a thread-pool future.
+    """
+    from harness_kit import harness as harness_mod
+    from harness_kit import skill as skill_mod
+    from harness_kit.blueprint import _parse_asset_ref
+    from harness_kit.call_logger import log_call
+    from harness_kit.config import read_config
+    from harness_kit.llm import LLMConfig, build_messages, call_llm
+
+    step_id: str = step["id"]
+    step_name: str = step.get("name", step_id)
+    timeout: int = int(step.get("timeout", 120))
+    max_retries: int = int(step.get("max_retries", 0))
+
+    # Interpolate step inputs from context
+    raw_inputs: dict[str, Any] = step.get("inputs") or {}
+    vars_: dict[str, str] = {k: interpolate_variables(str(v), context) for k, v in raw_inputs.items()}
+
+    t0 = time.perf_counter()
+
+    try:
+        harness_ref: Optional[str] = step.get("harness")
+        skill_ref: Optional[str] = step.get("skill")
+        model_overrides: dict[str, Any] = {}
+
+        if harness_ref:
+            h_name, h_version = _parse_asset_ref(harness_ref)
+            harness_data = harness_mod.load_harness(h_name, h_version, base)
+            # Extract model overrides from harness model config
+            model_cfg: dict[str, Any] = harness_data.get("model") or {}
+            model_overrides = {
+                k: v
+                for k, v in {
+                    "model": model_cfg.get("name"),
+                    "temperature": model_cfg.get("temperature"),
+                    "max_tokens": model_cfg.get("max_tokens"),
+                }.items()
+                if v is not None
+            }
+            # Use the first skill defined in the harness
+            skills_list: list[str] = harness_data.get("skills") or []
+            if not skills_list:
+                raise ValueError(f"Harness '{harness_ref}' has no skills defined.")
+            s_name, s_version = _parse_asset_ref(str(skills_list[0]))
+            skill_label = f"{h_name}:{s_name}"
+        elif skill_ref:
+            s_name, s_version = _parse_asset_ref(skill_ref)
+            skill_label = s_name
+        else:
+            raise ValueError("Agentic step must have either 'harness' or 'skill' field.")
+
+        skill_data = skill_mod.load_skill(s_name, s_version, base)
+        rendered = skill_mod.render_skill_prompt(s_name, s_version, base)
+
+        try:
+            global_cfg = read_config(base)
+        except Exception:
+            global_cfg = {}
+
+        llm_config = LLMConfig.from_harness_config(global_cfg, model_overrides)
+        messages = build_messages(skill_data, rendered, vars=vars_)
+
+        # Execute with retries and per-attempt timeout
+        last_exc: Optional[Exception] = None
+        response = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(call_llm, messages, llm_config, False)
+                    response = future.result(timeout=timeout)
+                break  # success
+            except concurrent.futures.TimeoutError:
+                last_exc = TimeoutError(f"LLM call timed out after {timeout}s")
+                if attempt < max_retries:
+                    time.sleep(2**attempt)
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                # Retry only on transient errors
+                err_lower = str(exc).lower()
+                is_retryable = any(
+                    kw in err_lower
+                    for kw in ("rate limit", "timeout", "503", "502", "429", "connection")
+                )
+                if is_retryable and attempt < max_retries:
+                    time.sleep(2**attempt)
+                else:
+                    break
+
+        duration = time.perf_counter() - t0
+
+        if response is None:
+            # All attempts exhausted
+            err_msg = str(last_exc) if last_exc else "Unknown error"
+            status = "timeout" if isinstance(last_exc, TimeoutError) else "failed"
+            log_call(
+                skill=skill_label,
+                model=llm_config.model,
+                input_tokens=0,
+                output_tokens=0,
+                duration=duration,
+                status=status,
+                error=err_msg,
+                inputs=vars_,
+                output=None,
+                base=base,
+            )
+            return StepResult(
+                step_id=step_id,
+                step_name=step_name,
+                step_type="agentic",
+                status=status,
+                output="",
+                stderr=err_msg,
+                duration=duration,
+                error=err_msg,
+            )
+
+        log_call(
+            skill=skill_label,
+            model=response.model,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            duration=duration,
+            status="success",
+            inputs=vars_,
+            output=response.content,
+            base=base,
+        )
+        return StepResult(
+            step_id=step_id,
+            step_name=step_name,
+            step_type="agentic",
+            status="success",
+            output=response.content,
+            duration=duration,
+        )
+
+    except Exception as exc:  # noqa: BLE001
+        duration = time.perf_counter() - t0
+        return StepResult(
+            step_id=step_id,
+            step_name=step_name,
+            step_type="agentic",
+            status="failed",
+            output="",
+            stderr=str(exc),
+            duration=duration,
+            error=str(exc),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Blueprint executor
 # ---------------------------------------------------------------------------
 
@@ -187,6 +358,7 @@ def execute_blueprint(
     *,
     dry_run: bool = False,
     start_step: Optional[str] = None,
+    base: Optional[Path] = None,
 ) -> BlueprintRunResult:
     """Execute all steps in a blueprint.
 
@@ -195,11 +367,7 @@ def execute_blueprint(
         inputs:         Key/value pairs matching the blueprint's ``inputs`` list.
         dry_run:        When *True*, render commands but do not execute them.
         start_step:     Step ID to start execution from (skips earlier steps).
-
-    Notes:
-        - Agentic steps are logged as ``skipped`` with a note until Phase 4.4.
-        - Python function steps (``type: python``) are reserved for a future
-          extension; they are skipped with a note in this phase.
+        base:           Base directory for resolving .harness/ assets (defaults to cwd).
     """
     name: str = blueprint_data.get("name", "")
     version: str = blueprint_data.get("version", "")
@@ -286,15 +454,7 @@ def execute_blueprint(
         elif step_type == "deterministic":
             result = run_deterministic_step(step, context)
         elif step_type == "agentic":
-            # Phase 4.4 will implement agentic execution
-            result = StepResult(
-                step_id=step_id,
-                step_name=step.get("name", step_id),
-                step_type="agentic",
-                status="skipped",
-                output="[agentic steps require Phase 4.4 — skipped]",
-                duration=0.0,
-            )
+            result = run_agentic_step(step, context, base)
         else:
             result = StepResult(
                 step_id=step_id,
@@ -390,7 +550,6 @@ def execute_blueprint(
     any_failed = any(
         r.status in ("failed", "timeout")
         for r in step_results
-        if r.step_type == "deterministic"
     )
     if dry_run:
         overall = "dry_run"
