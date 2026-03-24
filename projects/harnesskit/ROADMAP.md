@@ -35,7 +35,7 @@ Blueprint（工作流编排）
 
 **目标**：建立项目骨架，实现四类原子资产的 CRUD 和版本管理。
 
-### Phase 1.1：项目初始化
+### Phase 1.1：项目初始化 ✅
 **任务**：
 1. 创建项目目录结构
    - `harness_kit/` —— Python 包
@@ -59,7 +59,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 1.2：Prompt 资产管理
+### Phase 1.2：Prompt 资产管理 ✅
 **任务**：
 1. Prompt 数据模型（YAML）
    ```yaml
@@ -100,7 +100,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 1.3：Schema 资产管理
+### Phase 1.3：Schema 资产管理 ✅
 **任务**：
 1. Schema 数据模型（JSON Schema）
    ```json
@@ -133,7 +133,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 1.4：Context 模板管理
+### Phase 1.4：Context 模板管理 ✅
 **任务**：
 1. Context 数据模型（YAML）
    ```yaml
@@ -169,7 +169,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 1.5：Rule 约束管理
+### Phase 1.5：Rule 约束管理 ✅
 **任务**：
 1. Rule 数据模型（YAML）
    ```yaml
@@ -200,7 +200,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 1.6：资产间引用解析
+### Phase 1.6：资产间引用解析 ✅
 **任务**：
 1. 实现引用语法解析（统一格式：`{name}@{version}`，类型从上下文推断）
    - `code-reviewer@v0.1.0` → 精确版本
@@ -223,7 +223,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 1.7：Phase 1 集成测试与文档
+### Phase 1.7：Phase 1 集成测试与文档 ✅
 **任务**：
 1. 集成测试
    - 完整的用户场景测试：init → save prompt → save schema → create context → 引用它们
@@ -248,7 +248,7 @@ Blueprint（工作流编排）
 
 **目标**：实现 Skill 定义、I/O 契约、独立运行。
 
-### Phase 2.1：Skill 数据模型与存储
+### Phase 2.1：Skill 数据模型与存储 ✅
 **任务**：
 1. Skill YAML 格式
    ```yaml
@@ -303,7 +303,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 2.2：Skill CLI 命令
+### Phase 2.2：Skill CLI 命令 ✅
 **任务**：
 1. 实现 `harnesskit skill` 子命令：
    - `save <name> --file skill.yaml`
