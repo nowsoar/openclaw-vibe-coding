@@ -323,7 +323,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 2.3：Skill 独立运行
+### Phase 2.3：Skill 独立运行 ✅
 **任务**：
 1. LLM 调用基础模块
    - 支持 OpenAI API 格式
@@ -343,9 +343,9 @@ Blueprint（工作流编排）
    - 记录：时间、skill、模型、input、output、token 数、耗时
 
 **验收标准**：
-- 能成功调用 LLM 并返回结果
-- 日志文件正确生成
-- 支持流式输出（--stream）
+- ✅ 能成功调用 LLM 并返回结果
+- ✅ 日志文件正确生成
+- ✅ 支持流式输出（--stream）
 
 ---
 

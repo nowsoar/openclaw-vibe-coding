@@ -412,7 +412,137 @@ Returns exit code `1` if broken references or cycles are found, making it CI-fri
 
 ---
 
-## Command Quick Reference
+## Phase 2 Commands Reference
+
+### `harnesskit skill run` — Execute a Skill via LLM
+
+Run a skill by assembling its prompts, context, and rules, then calling the configured LLM.
+
+#### Configuration
+
+HarnessKit reads LLM settings from `.harness/config.yaml`:
+
+```yaml
+default_model: gpt-4o
+api_key: ${OPENAI_API_KEY}   # env var reference
+log_level: INFO
+```
+
+Override `base_url` for any OpenAI-compatible API (DeepSeek, Ollama, Azure, etc.):
+
+```yaml
+default_model: deepseek-chat
+api_key: ${DEEPSEEK_API_KEY}
+base_url: https://api.deepseek.com/v1
+```
+
+Or set `OPENAI_BASE_URL` environment variable.
+
+#### Basic usage
+
+```bash
+# Run a skill, passing input variables with --var / -v
+harnesskit skill run code-reviewer --var code="def foo(): pass" --var language=python
+
+# Override the model for this call
+harnesskit skill run code-reviewer --var code="..." --model gpt-4o-mini
+
+# Stream output token-by-token
+harnesskit skill run code-reviewer --var code="..." --stream
+```
+
+#### Dry-run (inspect without calling LLM)
+
+Preview the assembled messages without making an API call — no API key required:
+
+```bash
+harnesskit skill run code-reviewer --var code="def foo(): pass" --dry-run
+```
+
+Output:
+
+```
+── Assembled Messages (dry-run) ──
+
+[SYSTEM]
+You are a senior code reviewer.
+规则：Only output valid JSON
+
+[USER]
+Please review the following code:
+def foo(): pass
+
+Model: gpt-4o
+```
+
+#### Rule enforcement modes
+
+```bash
+# strict: hard rule violation → non-zero exit (fail fast)
+harnesskit skill run code-reviewer --var code="..." --check-rules strict
+
+# lenient (default): hard rule violation → warning only, still succeeds
+harnesskit skill run code-reviewer --var code="..." --check-rules lenient
+```
+
+---
+
+### `harnesskit logs` — LLM Call Logs
+
+Every `skill run` execution is automatically recorded in `.harness/logs/calls.jsonl`.
+
+#### View recent calls
+
+```bash
+harnesskit logs tail           # last 20 entries
+harnesskit logs tail --n 50    # last 50 entries
+```
+
+Output:
+
+```
+            Recent LLM Calls
+Timestamp            Skill          Model    Status   Tokens ↑↓  Duration
+2026-03-24 10:00:01  code-reviewer  gpt-4o   success  120 / 80   1.23s
+2026-03-24 10:01:05  code-reviewer  gpt-4o   error    0 / 0      0.00s
+```
+
+#### Search and filter
+
+```bash
+# Filter by skill name
+harnesskit logs search --skill code-reviewer
+
+# Filter by status
+harnesskit logs search --status error
+
+# Combine filters, limit results
+harnesskit logs search --skill code-reviewer --status success --limit 10
+```
+
+#### Log record format (JSONL)
+
+Each line in `calls.jsonl`:
+
+```json
+{
+  "timestamp": "2026-03-24T10:00:01+00:00",
+  "type": "llm_call",
+  "skill": "code-reviewer",
+  "model": "gpt-4o",
+  "input_tokens": 120,
+  "output_tokens": 80,
+  "total_tokens": 200,
+  "duration": 1.23,
+  "status": "success",
+  "inputs": {"code": "def foo(): pass", "language": "python"},
+  "output_preview": "Issues found:\n1. Missing implementation..."
+}
+```
+
+---
+
+
 
 | Command | Description |
 |---|---|
@@ -439,6 +569,12 @@ Returns exit code `1` if broken references or cycles are found, making it CI-fri
 | `harnesskit rule test <name>` | Test rule against input |
 | `harnesskit rule delete <name>` | Delete a rule |
 | `harnesskit doctor` | Health check scan |
+| `harnesskit skill run <name>` | Run a skill via LLM |
+| `harnesskit skill run <name> --dry-run` | Preview assembled messages |
+| `harnesskit skill run <name> --stream` | Stream LLM output |
+| `harnesskit skill run <name> --check-rules strict` | Fail on hard rule violations |
+| `harnesskit logs tail` | View recent LLM call logs |
+| `harnesskit logs search` | Search/filter call logs |
 
 Use `--help` on any command for full option details:
 
@@ -483,4 +619,4 @@ pytest tests/test_integration.py -v
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 1 complete** — Primitive Assets (prompts, schemas, contexts, rules, reference resolution).
+Current status: **Phase 2.3 complete** — Skill independent execution: LLM calls (OpenAI-compatible), streaming output, hard/soft rule enforcement, and call logging.

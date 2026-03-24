@@ -25,6 +25,7 @@ from harness_kit import context as _context_mod
 from harness_kit import rule as _rule_mod
 from harness_kit import resolver as _resolver_mod
 from harness_kit import skill as _skill_mod
+from harness_kit import call_logger as _call_logger_mod
 
 app = typer.Typer(
     name="harnesskit",
@@ -68,6 +69,13 @@ app.add_typer(rule_app, name="rule")
 
 skill_app = typer.Typer(help="Manage skill assets.", no_args_is_help=True)
 app.add_typer(skill_app, name="skill")
+
+# ---------------------------------------------------------------------------
+# logs sub-app
+# ---------------------------------------------------------------------------
+
+logs_app = typer.Typer(help="View LLM call logs.", no_args_is_help=True)
+app.add_typer(logs_app, name="logs")
 
 
 def _require_init() -> None:
@@ -1150,8 +1158,271 @@ def skill_delete(
 
 
 # ---------------------------------------------------------------------------
-# init
+# skill run
 # ---------------------------------------------------------------------------
+
+
+@skill_app.command("run")
+def skill_run(
+    ref: str = typer.Argument(..., help="Skill name or name@version."),
+    var: list[str] = typer.Option(
+        [], "--var", "-v",
+        help="Input variable as key=value. Can be repeated.",
+    ),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override model (e.g. gpt-4o)."),
+    stream: bool = typer.Option(False, "--stream", "-s", help="Stream output token-by-token."),
+    check_rules: str = typer.Option(
+        "lenient",
+        "--check-rules",
+        help="Rule check mode: 'strict' (fail on hard rule violation) or 'lenient' (warn only).",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show assembled prompt without calling LLM."),
+) -> None:
+    """Run a skill by calling the configured LLM."""
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    # Load skill
+    try:
+        skill_data = _skill_mod.load_skill(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    # Parse --var key=value pairs
+    vars_dict: dict[str, str] = {}
+    for v in var:
+        if "=" not in v:
+            console.print(f"[red]✗ Invalid --var format: [bold]{v}[/bold] (expected key=value)[/red]")
+            raise typer.Exit(1)
+        k, val = v.split("=", 1)
+        vars_dict[k.strip()] = val
+
+    # Validate required inputs
+    for inp in skill_data.get("inputs") or []:
+        if inp.get("required", True) and inp.get("name") not in vars_dict:
+            if inp.get("default") is not None:
+                vars_dict[inp["name"]] = str(inp["default"])
+            else:
+                console.print(
+                    f"[red]✗ Missing required input: [bold]{inp['name']}[/bold][/red]\n"
+                    f"  Use [bold]--var {inp['name']}=...[/bold] to provide it."
+                )
+                raise typer.Exit(1)
+
+    # Render skill assets
+    try:
+        rendered = _skill_mod.render_skill_prompt(name, version)
+    except Exception as e:
+        console.print(f"[red]✗ Failed to render skill: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Build messages
+    from harness_kit.llm import LLMConfig, build_messages, call_llm
+
+    cfg = read_config()
+    llm_config = LLMConfig.from_harness_config(cfg, overrides={"model": model} if model else {})
+
+    messages = build_messages(skill_data, rendered, vars_dict)
+
+    if dry_run:
+        console.print("\n[bold cyan]── Assembled Messages (dry-run) ──[/bold cyan]")
+        for msg in messages:
+            role_color = "green" if msg["role"] == "system" else "blue"
+            console.print(f"\n[{role_color}][{msg['role'].upper()}][/{role_color}]")
+            console.print(msg["content"])
+        console.print(f"\n[dim]Model: {llm_config.model}[/dim]")
+        return
+
+    if not llm_config.api_key:
+        console.print(
+            "[red]✗ No API key found.[/red] "
+            "Set [bold]OPENAI_API_KEY[/bold] environment variable or configure [cyan].harness/config.yaml[/cyan]."
+        )
+        raise typer.Exit(1)
+
+    # Call LLM
+    console.print(f"[dim]Calling [bold]{llm_config.model}[/bold] for skill [bold]{name}[/bold]…[/dim]")
+    output_content = ""
+    call_status = "success"
+    call_error: str | None = None
+
+    try:
+        if stream:
+            import time as _time
+            t0 = _time.perf_counter()
+            chunks: list[str] = []
+            console.print("\n[bold cyan]── Output ──[/bold cyan]")
+            for chunk in call_llm(messages, llm_config, stream=True):
+                console.print(chunk, end="", highlight=False)
+                chunks.append(chunk)
+            console.print()
+            output_content = "".join(chunks)
+            llm_resp_duration = _time.perf_counter() - t0
+            llm_resp_model = llm_config.model
+            llm_resp_input_tokens = 0
+            llm_resp_output_tokens = 0
+        else:
+            resp = call_llm(messages, llm_config, stream=False)
+            output_content = resp.content
+            llm_resp_duration = resp.duration
+            llm_resp_model = resp.model
+            llm_resp_input_tokens = resp.input_tokens
+            llm_resp_output_tokens = resp.output_tokens
+            console.print("\n[bold cyan]── Output ──[/bold cyan]")
+            console.print(output_content)
+            console.print(
+                f"\n[dim]Model: {resp.model} | "
+                f"Tokens: {resp.input_tokens}↑ {resp.output_tokens}↓ | "
+                f"Duration: {resp.duration:.2f}s[/dim]"
+            )
+    except Exception as e:
+        call_status = "error"
+        call_error = str(e)
+        console.print(f"[red]✗ LLM call failed: {e}[/red]")
+        _call_logger_mod.log_call(
+            skill=name,
+            model=llm_config.model,
+            input_tokens=0,
+            output_tokens=0,
+            duration=0.0,
+            status="error",
+            error=call_error,
+            inputs=vars_dict,
+        )
+        raise typer.Exit(1)
+
+    # Apply hard rules if output available
+    if output_content and output_content != "[streamed]":
+        rule_names = []
+        assets = skill_data.get("assets") or {}
+        for rref in (assets.get("rules") or []):
+            rname, _ = _skill_mod._parse_asset_ref(str(rref))
+            rule_names.append(rname)
+
+        violations: list[str] = []
+        for rname in rule_names:
+            try:
+                result = _rule_mod.check_rule_by_name(rname, output_content)
+                if result.triggered and result.rule_type == "hard":
+                    violations.append(
+                        f"[hard] {rname}: {result.fix_hint or 'Rule violated'} "
+                        f"(matches: {result.matches})"
+                    )
+            except Exception:
+                pass
+
+        if violations:
+            console.print("\n[bold yellow]── Rule Violations ──[/bold yellow]")
+            for v in violations:
+                console.print(f"  [yellow]⚠[/yellow] {v}")
+            if check_rules == "strict":
+                call_status = "rule_violation"
+                _call_logger_mod.log_call(
+                    skill=name,
+                    model=llm_resp_model,
+                    input_tokens=llm_resp_input_tokens,
+                    output_tokens=llm_resp_output_tokens,
+                    duration=llm_resp_duration,
+                    status=call_status,
+                    inputs=vars_dict,
+                    output=output_content,
+                )
+                raise typer.Exit(1)
+
+    # Log successful call
+    _call_logger_mod.log_call(
+        skill=name,
+        model=llm_resp_model,
+        input_tokens=llm_resp_input_tokens,
+        output_tokens=llm_resp_output_tokens,
+        duration=llm_resp_duration,
+        status=call_status,
+        inputs=vars_dict,
+        output=output_content,
+    )
+
+
+# ---------------------------------------------------------------------------
+# logs tail / search
+# ---------------------------------------------------------------------------
+
+
+@logs_app.command("tail")
+def logs_tail(
+    n: int = typer.Option(20, "--n", "-n", help="Number of recent records to show."),
+) -> None:
+    """Show the most recent LLM call log entries."""
+    _require_init()
+    records = _call_logger_mod.tail_logs(n=n)
+    if not records:
+        console.print("[dim]No call logs found.[/dim]")
+        return
+
+    table = Table(title="Recent LLM Calls", show_lines=False)
+    table.add_column("Timestamp", style="dim", no_wrap=True)
+    table.add_column("Skill", style="cyan")
+    table.add_column("Model", style="blue")
+    table.add_column("Status", style="bold")
+    table.add_column("Tokens ↑↓", justify="right")
+    table.add_column("Duration", justify="right")
+
+    for rec in records:
+        status = rec.get("status", "?")
+        status_style = "green" if status == "success" else "red" if status == "error" else "yellow"
+        ts = rec.get("timestamp", "")[:19].replace("T", " ")
+        tokens = f"{rec.get('input_tokens', 0)} / {rec.get('output_tokens', 0)}"
+        duration = f"{rec.get('duration', 0):.2f}s"
+        table.add_row(
+            ts,
+            rec.get("skill", "?"),
+            rec.get("model", "?"),
+            f"[{status_style}]{status}[/{status_style}]",
+            tokens,
+            duration,
+        )
+    console.print(table)
+
+
+@logs_app.command("search")
+def logs_search(
+    skill: Optional[str] = typer.Option(None, "--skill", help="Filter by skill name."),
+    status: Optional[str] = typer.Option(None, "--status", help="Filter by status (success/error)."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Maximum number of results."),
+) -> None:
+    """Search call logs with optional filters."""
+    _require_init()
+    records = _call_logger_mod.search_logs(skill=skill, status=status, limit=limit)
+    if not records:
+        console.print("[dim]No matching call logs found.[/dim]")
+        return
+
+    table = Table(title=f"Call Logs (skill={skill or '*'}, status={status or '*'})", show_lines=False)
+    table.add_column("Timestamp", style="dim", no_wrap=True)
+    table.add_column("Skill", style="cyan")
+    table.add_column("Model", style="blue")
+    table.add_column("Status", style="bold")
+    table.add_column("Tokens ↑/↓", justify="right")
+    table.add_column("Duration", justify="right")
+
+    for rec in records:
+        status_val = rec.get("status", "?")
+        status_style = "green" if status_val == "success" else "red" if status_val == "error" else "yellow"
+        ts = rec.get("timestamp", "")[:19].replace("T", " ")
+        tokens = f"{rec.get('input_tokens', 0)} / {rec.get('output_tokens', 0)}"
+        duration = f"{rec.get('duration', 0):.2f}s"
+        table.add_row(
+            ts,
+            rec.get("skill", "?"),
+            rec.get("model", "?"),
+            f"[{status_style}]{status_val}[/{status_style}]",
+            tokens,
+            duration,
+        )
+    console.print(table)
+
+
+
 
 
 @app.callback()
