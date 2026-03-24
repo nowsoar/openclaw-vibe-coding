@@ -1647,7 +1647,7 @@ Reports are written even when a blueprint fails or is stopped, making them usefu
 
 ---
 
-## Phase 5 — Eval Engine (Phase 5.1)
+## Phase 5 — Eval Engine
 
 The **Eval Engine** lets you define repeatable test suites for your Skills and Harnesses — with structured assertions — so you can measure and compare quality over time.
 
@@ -1709,6 +1709,73 @@ harnesskit eval show code-review-suite
 harnesskit eval delete code-review-suite --yes
 ```
 
+### Assertion Engine (Phase 5.2)
+
+The assertion engine evaluates structured assertions against any Python value (dict, list, string) using **JSONPath** (`jsonpath-ng`) for navigation.
+
+#### Assertion types
+
+| Type | Required fields | Description |
+|---|---|---|
+| `contains` | `path`, `value` | JSONPath result equals or contains `value` (substring / list element) |
+| `regex` | `path`, `pattern` | JSONPath result matches regex `pattern` (any match in the result list) |
+| `json_schema` | `path`, `schema` | First JSONPath match validates against a JSON Schema dict |
+| `custom` | `function` | Importable Python function returns truthy (e.g. `mymodule.check`) |
+
+`path` uses standard JSONPath syntax (e.g. `$`, `$.key`, `$.items[*].type`).
+`path` is optional — if omitted, the root data value is used directly.
+
+#### Using the assertion engine in Python
+
+```python
+from harness_kit.assertions import run_assertions, assertions_passed, assertion_summary
+
+# Typically you'd get this from an LLM call result
+llm_output = {
+    "issues": [
+        {"type": "ZeroDivisionError", "severity": "high", "message": "除零风险"}
+    ],
+    "summary": "发现 error handling 问题",
+}
+
+assertions = [
+    {"type": "contains", "path": "$.issues[*].type",     "value": "ZeroDivisionError"},
+    {"type": "contains", "path": "$.issues[*].severity", "value": "high"},
+    {"type": "regex",    "path": "$.summary",            "pattern": r"异常处理|error handling"},
+    {
+        "type": "json_schema",
+        "path": "$.issues[0]",
+        "schema": {
+            "type": "object",
+            "required": ["type", "severity", "message"],
+        },
+    },
+]
+
+results = run_assertions(assertions, llm_output)
+
+if assertions_passed(results):
+    print("All assertions passed!")
+else:
+    for r in results:
+        if not r.passed:
+            print(r.message)  # "FAIL — '$.issues[*].type' does not contain ..."
+
+summary = assertion_summary(results)
+print(summary)  # {"total": 4, "passed": 4, "failed": 0}
+```
+
+#### AssertionResult fields
+
+| Field | Type | Description |
+|---|---|---|
+| `passed` | `bool` | `True` if the assertion was satisfied |
+| `assertion_type` | `str` | Type string (`contains`, `regex`, …) |
+| `path` | `str \| None` | The JSONPath that was evaluated |
+| `expected` | `Any` | The expected value / pattern / schema |
+| `actual` | `Any` | The values returned by the JSONPath evaluation |
+| `message` | `str` | Human-readable `OK — …` or `FAIL — …` explanation |
+
 ---
 
 ## Version References
@@ -1746,4 +1813,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 5.1 complete** — Eval Engine: Test Suite data model with `contains`, `regex`, `json_schema`, and `custom` assertion types. `harnesskit eval suite-add/list/show/delete` commands. 48 new pytest tests (951 total, 100 % passing).
+Current status: **Phase 5.2 complete** — Eval Engine: Assertion Engine with JSONPath navigation (`jsonpath-ng`), all four assertion types (`contains`, `regex`, `json_schema`, `custom`), result dataclass with `passed/message/actual/expected` fields, and `run_assertions` / `assertions_passed` / `assertion_summary` helpers. 51 new pytest tests (all passing).
