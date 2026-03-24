@@ -1871,6 +1871,294 @@ def harness_delete(
     console.print(f"[green]✓ Deleted[/green] {target}")
 
 
+# ---------------------------------------------------------------------------
+# harness run
+# ---------------------------------------------------------------------------
+
+
+def _estimate_tokens(char_count: int) -> int:
+    """Rough token estimate: ~4 characters per token."""
+    return max(1, char_count // 4)
+
+
+@harness_app.command("run")
+def harness_run(
+    ref: str = typer.Argument(..., help="Harness name or name@version."),
+    skill_name: Optional[str] = typer.Option(
+        None, "--skill", "-s",
+        help="Which skill in the harness to run. Required when harness has multiple skills.",
+    ),
+    var: list[str] = typer.Option(
+        [], "--var", "-v",
+        help="Input variable as key=value. Can be repeated.",
+    ),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override model."),
+    stream: bool = typer.Option(False, "--stream", help="Stream output token-by-token."),
+    check_rules: str = typer.Option(
+        "lenient",
+        "--check-rules",
+        help="Rule check mode: 'strict' (fail on hard rule violation) or 'lenient' (warn only).",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show assembled prompt without calling LLM."),
+) -> None:
+    """Run a harness: load config, resolve skills, manage context budget, call LLM."""
+    _require_init()
+    hname, hversion = _parse_name_version(ref)
+
+    # Load harness
+    try:
+        harness_data = _harness_mod.load_harness(hname, hversion)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    skills_refs = harness_data.get("skills") or []
+    context_budget = harness_data.get("context_budget", 4000)
+    harness_model_cfg = harness_data.get("model") or {}
+    harness_version = harness_data.get("version", "?")
+
+    console.print(
+        f"\n[bold cyan]Harness:[/bold cyan] [bold]{hname}[/bold] "
+        f"[dim]{harness_version}[/dim] — {harness_data.get('description', '')}"
+    )
+    console.print(
+        f"[dim]Context budget: {context_budget} tokens | "
+        f"Model: {harness_model_cfg.get('name', 'gpt-4o')} | "
+        f"Skills: {len(skills_refs)}[/dim]\n"
+    )
+
+    # Determine which skill to run
+    if not skills_refs:
+        console.print("[red]✗ Harness has no skills defined.[/red]")
+        raise typer.Exit(1)
+
+    if len(skills_refs) == 1:
+        resolved_skill_ref = skills_refs[0]
+    else:
+        if not skill_name:
+            console.print(
+                f"[yellow]⚠ Harness has {len(skills_refs)} skills. "
+                f"Use [bold]--skill <name>[/bold] to select one:[/yellow]"
+            )
+            for sr in skills_refs:
+                console.print(f"  • [cyan]{sr}[/cyan]")
+            raise typer.Exit(1)
+        # Find matching ref
+        resolved_skill_ref = None
+        for sr in skills_refs:
+            sr_name, _ = _harness_mod._parse_skill_ref(str(sr))
+            if sr_name == skill_name:
+                resolved_skill_ref = sr
+                break
+        if resolved_skill_ref is None:
+            console.print(
+                f"[red]✗ Skill [bold]{skill_name}[/bold] not found in harness "
+                f"[bold]{hname}[/bold].[/red]"
+            )
+            console.print(f"  Available skills: {', '.join(str(s) for s in skills_refs)}")
+            raise typer.Exit(1)
+
+    s_name, s_version = _harness_mod._parse_skill_ref(str(resolved_skill_ref))
+    console.print(f"[dim]Running skill: [bold]{resolved_skill_ref}[/bold][/dim]\n")
+
+    # Load skill
+    try:
+        skill_data = _skill_mod.load_skill(s_name, s_version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    # Parse --var key=value pairs
+    vars_dict: dict[str, str] = {}
+    for v in var:
+        if "=" not in v:
+            console.print(f"[red]✗ Invalid --var format: [bold]{v}[/bold] (expected key=value)[/red]")
+            raise typer.Exit(1)
+        k, val = v.split("=", 1)
+        vars_dict[k.strip()] = val
+
+    # Validate required inputs from skill
+    for inp in skill_data.get("inputs") or []:
+        if inp.get("required", True) and inp.get("name") not in vars_dict:
+            if inp.get("default") is not None:
+                vars_dict[inp["name"]] = str(inp["default"])
+            else:
+                console.print(
+                    f"[red]✗ Missing required input: [bold]{inp['name']}[/bold][/red]\n"
+                    f"  Use [bold]--var {inp['name']}=...[/bold] to provide it."
+                )
+                raise typer.Exit(1)
+
+    # Render skill assets
+    try:
+        rendered = _skill_mod.render_skill_prompt(s_name, s_version)
+    except Exception as e:
+        console.print(f"[red]✗ Failed to render skill: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Build messages
+    from harness_kit.llm import LLMConfig, build_messages, call_llm
+
+    cfg = read_config()
+
+    # Merge harness model config with global config, then apply CLI overrides
+    harness_overrides: dict = {}
+    if harness_model_cfg.get("name"):
+        harness_overrides["model"] = harness_model_cfg["name"]
+    if harness_model_cfg.get("temperature") is not None:
+        harness_overrides["temperature"] = harness_model_cfg["temperature"]
+    if harness_model_cfg.get("max_tokens"):
+        harness_overrides["max_tokens"] = harness_model_cfg["max_tokens"]
+    if model:
+        harness_overrides["model"] = model  # CLI --model takes priority
+
+    llm_config = LLMConfig.from_harness_config(cfg, overrides=harness_overrides)
+
+    messages = build_messages(skill_data, rendered, vars_dict)
+
+    # Context budget check
+    total_chars = sum(len(m.get("content", "")) for m in messages)
+    estimated_tokens = _estimate_tokens(total_chars)
+    if estimated_tokens > context_budget:
+        console.print(
+            f"[yellow]⚠ Estimated prompt tokens (~{estimated_tokens}) exceed context_budget "
+            f"({context_budget}). Consider reducing input size or increasing context_budget.[/yellow]"
+        )
+
+    if dry_run:
+        console.print("[bold cyan]── Assembled Messages (dry-run) ──[/bold cyan]")
+        for msg in messages:
+            role_color = "green" if msg["role"] == "system" else "blue"
+            console.print(f"\n[{role_color}][{msg['role'].upper()}][/{role_color}]")
+            console.print(msg["content"])
+        console.print(
+            f"\n[dim]Model: {llm_config.model} | "
+            f"Estimated tokens: ~{estimated_tokens} / {context_budget} budget[/dim]"
+        )
+        return
+
+    if not llm_config.api_key:
+        console.print(
+            "[red]✗ No API key found.[/red] "
+            "Set [bold]OPENAI_API_KEY[/bold] environment variable or configure [cyan].harness/config.yaml[/cyan]."
+        )
+        raise typer.Exit(1)
+
+    # Merge harness constraint rules with skill rules for checking
+    harness_constraints = harness_data.get("constraints") or {}
+    harness_rules = harness_constraints.get("rules") or []
+
+    # Call LLM
+    console.print(f"[dim]Calling [bold]{llm_config.model}[/bold]…[/dim]")
+    output_content = ""
+    call_status = "success"
+    call_error: str | None = None
+
+    try:
+        if stream:
+            import time as _time
+            t0 = _time.perf_counter()
+            chunks: list[str] = []
+            console.print("\n[bold cyan]── Output ──[/bold cyan]")
+            for chunk in call_llm(messages, llm_config, stream=True):
+                console.print(chunk, end="", highlight=False)
+                chunks.append(chunk)
+            console.print()
+            output_content = "".join(chunks)
+            llm_resp_duration = _time.perf_counter() - t0
+            llm_resp_model = llm_config.model
+            llm_resp_input_tokens = 0
+            llm_resp_output_tokens = 0
+        else:
+            resp = call_llm(messages, llm_config, stream=False)
+            output_content = resp.content
+            llm_resp_duration = resp.duration
+            llm_resp_model = resp.model
+            llm_resp_input_tokens = resp.input_tokens
+            llm_resp_output_tokens = resp.output_tokens
+            console.print("\n[bold cyan]── Output ──[/bold cyan]")
+            console.print(output_content)
+            console.print(
+                f"\n[dim]Model: {resp.model} | "
+                f"Tokens: {resp.input_tokens}↑ {resp.output_tokens}↓ | "
+                f"Duration: {resp.duration:.2f}s[/dim]"
+            )
+    except Exception as e:
+        call_status = "error"
+        call_error = str(e)
+        console.print(f"[red]✗ LLM call failed: {e}[/red]")
+        _call_logger_mod.log_call(
+            skill=f"{hname}/{s_name}",
+            model=llm_config.model,
+            input_tokens=0,
+            output_tokens=0,
+            duration=0.0,
+            status="error",
+            error=call_error,
+            inputs=vars_dict,
+        )
+        raise typer.Exit(1)
+
+    # Apply rules: skill rules + harness constraint rules
+    violations_data: list[dict] = []
+    if output_content:
+        rule_names: list[str] = []
+        assets = skill_data.get("assets") or {}
+        for rref in (assets.get("rules") or []):
+            rname, _ = _skill_mod._parse_asset_ref(str(rref))
+            rule_names.append(rname)
+        for rname in harness_rules:
+            if rname not in rule_names:
+                rule_names.append(str(rname))
+
+        for rname in rule_names:
+            try:
+                check_result = _rule_mod.check_rule_by_name(rname, output_content)
+                if check_result.triggered and check_result.rule_type == "hard":
+                    violations_data.append({
+                        "rule": check_result.rule_name,
+                        "type": "hard",
+                        "matches": check_result.matches,
+                        "fix_hint": check_result.fix_hint or "",
+                    })
+            except Exception:
+                pass
+
+    if violations_data:
+        console.print("\n[bold yellow]── Rule Violations ──[/bold yellow]")
+        for v in violations_data:
+            console.print(
+                f"  [yellow]⚠[/yellow] [hard] {v['rule']}: "
+                f"{v['fix_hint'] or 'Rule violated'} (matches: {v['matches']})"
+            )
+        call_status = "rule_violation"
+        _call_logger_mod.log_call(
+            skill=f"{hname}/{s_name}",
+            model=llm_resp_model,
+            input_tokens=llm_resp_input_tokens,
+            output_tokens=llm_resp_output_tokens,
+            duration=llm_resp_duration,
+            status=call_status,
+            inputs=vars_dict,
+            output=output_content,
+            violations=violations_data,
+        )
+        if check_rules == "strict":
+            raise typer.Exit(1)
+        return
+
+    # Log successful call
+    _call_logger_mod.log_call(
+        skill=f"{hname}/{s_name}",
+        model=llm_resp_model,
+        input_tokens=llm_resp_input_tokens,
+        output_tokens=llm_resp_output_tokens,
+        duration=llm_resp_duration,
+        status=call_status,
+        inputs=vars_dict,
+        output=output_content,
+    )
+
 
 @app.callback()
 def _main() -> None:

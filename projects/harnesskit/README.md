@@ -953,6 +953,67 @@ harnesskit harness delete my-code-review --yes        # all versions
 harnesskit harness delete my-code-review@v0.0.1 --yes # specific version
 ```
 
+#### Run a Harness
+
+Execute a skill within a harness, using the harness model config, context budget, and constraint rules:
+
+```bash
+# Run a harness with a single skill
+harnesskit harness run my-code-review --var code="def foo(): pass"
+
+# Select a specific skill when harness has multiple skills
+harnesskit harness run my-code-review --skill code-reviewer --var code="..."
+
+# Preview assembled prompt without calling the LLM
+harnesskit harness run my-code-review --dry-run
+
+# Stream output token-by-token
+harnesskit harness run my-code-review --stream --var code="..."
+
+# Override model (takes priority over harness model config)
+harnesskit harness run my-code-review --model gpt-4-turbo --var code="..."
+
+# Strict rule checking — fail on hard rule violation
+harnesskit harness run my-code-review --check-rules strict --var code="..."
+```
+
+**How `harness run` works:**
+
+1. Loads harness config (model, context_budget, constraints.rules)
+2. Resolves which skill to run (auto if 1 skill, or `--skill` flag for multiple)
+3. Validates required skill inputs
+4. Renders skill assets (prompts, context, rules)
+5. Checks estimated token count against `context_budget` — warns if exceeded
+6. Merges harness model config with global `.harness/config.yaml` (CLI `--model` takes priority)
+7. Applies skill rules **plus** harness constraint rules to the output
+8. Logs the call to `.harness/logs/calls.jsonl`
+
+**Context budget management:**
+
+The harness `context_budget` (in tokens) limits prompt size. HarnessKit estimates token count (~4 chars/token) before the LLM call and prints a warning if exceeded:
+
+```
+⚠ Estimated prompt tokens (~5200) exceed context_budget (4000).
+  Consider reducing input size or increasing context_budget.
+```
+
+The call still proceeds — it's a warning, not a hard stop. Adjust `context_budget` in the harness YAML to tune this threshold.
+
+**Multi-skill harness:**
+
+When a harness has multiple skills, you must specify which one to run:
+
+```bash
+# Shows available skills if --skill is omitted
+harnesskit harness run my-harness
+# ⚠ Harness has 2 skills. Use --skill <name> to select one:
+#   • code-reviewer@v0.1.0
+#   • explain-error@v0.0.2
+
+# Select explicitly
+harnesskit harness run my-harness --skill code-reviewer --var code="..."
+```
+
 ---
 
 | Command | Description |
@@ -1003,6 +1064,11 @@ harnesskit harness delete my-code-review@v0.0.1 --yes # specific version
 | `harnesskit harness validate <name>` | Validate all skill references |
 | `harnesskit harness clone <name> <new>` | Clone harness to new name (v0.0.1) |
 | `harnesskit harness delete <name[@ver]>` | Delete a harness |
+| `harnesskit harness run <name>` | Run a harness skill via LLM |
+| `harnesskit harness run <name> --skill <s>` | Select skill in multi-skill harness |
+| `harnesskit harness run <name> --dry-run` | Preview assembled messages |
+| `harnesskit harness run <name> --stream` | Stream LLM output |
+| `harnesskit harness run <name> --check-rules strict` | Fail on hard rule violations |
 
 Use `--help` on any command for full option details:
 
@@ -1047,4 +1113,4 @@ pytest tests/test_integration.py -v
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 3.1 complete** — Harness 数据模型: full Harness CRUD, CLI commands (`create`, `show`, `list`, `diff`, `clone`, `validate`, `delete`), skill reference validation, and 50 pytest tests covering all acceptance criteria.
+Current status: **Phase 3.2 complete** — Harness CLI 命令: full Harness CRUD + `harness run` command with multi-skill dispatch, context budget management, harness model config merging, constraint rule checking, and call logging. 578 pytest tests passing.

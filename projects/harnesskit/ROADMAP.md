@@ -456,7 +456,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 3.2：Harness CLI 命令
+### Phase 3.2：Harness CLI 命令 ✅
 **任务**：
 1. 实现 `harnesskit harness` 子命令：
    - `create <name> --skills skill1,skill2`
