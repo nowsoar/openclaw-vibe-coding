@@ -479,7 +479,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 3.3：Memory 记忆系统
+### Phase 3.3：Memory 记忆系统 ✅
 **任务**：
 1. Memory 存储实现
    - Session Memory：内存中，进程结束消失
@@ -509,8 +509,8 @@ Blueprint（工作流编排）
    - 先实现简单的关键词匹配
 
 **验收标准**：
-- Memory 能跨调用持久化
-- 超过 max_turns 自动压缩
+- ✅ Memory 能跨调用持久化
+- ✅ 超过 max_turns 自动压缩
 
 ---
 

@@ -1016,6 +1016,72 @@ harnesskit harness run my-harness --skill code-reviewer --var code="..."
 
 ---
 
+### `harnesskit memory` — Conversation Memory
+
+When a harness has `memory.scope: harness` or `memory.scope: global`, each `harness run` automatically persists conversation turns to disk — enabling history-aware multi-turn interactions.
+
+**Scopes:**
+
+| Scope | Persistence | Path |
+|---|---|---|
+| `session` | In-process only (default) | — |
+| `harness` | Per-harness JSON file | `.harness/memory/{name}.json` |
+| `global` | Shared across all harnesses | `.harness/memory/global.json` |
+
+**Configure memory in your harness YAML:**
+
+```yaml
+memory:
+  scope: harness   # session | harness | global
+  max_turns: 10    # auto-compress when exceeded
+```
+
+**Commands:**
+
+```bash
+# Show conversation history for a harness
+harnesskit memory show my-code-review
+
+# Show with global scope
+harnesskit memory show my-code-review --scope global
+
+# Limit to last 5 turns
+harnesskit memory show my-code-review -n 5
+
+# List all memory files
+harnesskit memory list
+
+# Search conversation history
+harnesskit memory search my-code-review "python error"
+
+# Clear memory (with confirmation prompt)
+harnesskit memory clear my-code-review
+
+# Clear without prompt
+harnesskit memory clear my-code-review --yes
+```
+
+**Context compression:**
+
+When the number of conversation turns exceeds `max_turns`, HarnessKit automatically compresses older turns into a summary, keeping recent context within budget:
+
+```
+[历史摘要 8 轮]
+USER: what is dependency injection?
+ASSISTANT: Dependency injection is a design pattern...
+...
+```
+
+The summary is stored in `metadata.summary` and can be viewed with `memory show`.
+
+**Disable memory for a single run:**
+
+```bash
+harnesskit harness run my-code-review --no-memory --var code="..."
+```
+
+---
+
 | Command | Description |
 |---|---|
 | `harnesskit init` | Initialize workspace |
@@ -1069,6 +1135,11 @@ harnesskit harness run my-harness --skill code-reviewer --var code="..."
 | `harnesskit harness run <name> --dry-run` | Preview assembled messages |
 | `harnesskit harness run <name> --stream` | Stream LLM output |
 | `harnesskit harness run <name> --check-rules strict` | Fail on hard rule violations |
+| `harnesskit harness run <name> --no-memory` | Disable memory persistence for this run |
+| `harnesskit memory show <name>` | Show conversation history for a harness |
+| `harnesskit memory list` | List all persisted memory files |
+| `harnesskit memory search <name> <keyword>` | Search conversation history |
+| `harnesskit memory clear <name> --yes` | Clear memory for a harness |
 
 Use `--help` on any command for full option details:
 
@@ -1113,4 +1184,4 @@ pytest tests/test_integration.py -v
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 3.2 complete** — Harness CLI 命令: full Harness CRUD + `harness run` command with multi-skill dispatch, context budget management, harness model config merging, constraint rule checking, and call logging. 578 pytest tests passing.
+Current status: **Phase 3.3 complete** — Memory 记忆系统: session/harness/global memory scopes with disk persistence, conversation history injection into harness run, auto-compression when max_turns exceeded, and `memory show/list/search/clear` CLI commands. 590 pytest tests passing.

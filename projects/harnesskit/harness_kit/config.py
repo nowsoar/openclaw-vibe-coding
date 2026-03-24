@@ -21,6 +21,7 @@ SUBDIRS = [
     "logs",
     "evals",
     "improvements",
+    "memory",
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {

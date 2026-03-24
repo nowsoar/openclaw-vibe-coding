@@ -27,6 +27,7 @@ from harness_kit import resolver as _resolver_mod
 from harness_kit import skill as _skill_mod
 from harness_kit import harness as _harness_mod
 from harness_kit import call_logger as _call_logger_mod
+from harness_kit import memory as _memory_mod
 
 app = typer.Typer(
     name="harnesskit",
@@ -84,6 +85,13 @@ app.add_typer(logs_app, name="logs")
 
 harness_app = typer.Typer(help="Manage harness configurations.", no_args_is_help=True)
 app.add_typer(harness_app, name="harness")
+
+# ---------------------------------------------------------------------------
+# memory sub-app
+# ---------------------------------------------------------------------------
+
+memory_app = typer.Typer(help="Manage harness conversation memory.", no_args_is_help=True)
+app.add_typer(memory_app, name="memory")
 
 
 def _require_init() -> None:
@@ -1900,6 +1908,7 @@ def harness_run(
         help="Rule check mode: 'strict' (fail on hard rule violation) or 'lenient' (warn only).",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show assembled prompt without calling LLM."),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Disable memory persistence for this run."),
 ) -> None:
     """Run a harness: load config, resolve skills, manage context budget, call LLM."""
     _require_init()
@@ -1916,6 +1925,14 @@ def harness_run(
     context_budget = harness_data.get("context_budget", 4000)
     harness_model_cfg = harness_data.get("model") or {}
     harness_version = harness_data.get("version", "?")
+
+    # Load memory
+    mem_config = harness_data.get("memory") or {}
+    mem_scope = mem_config.get("scope", "session")
+    mem_max_turns = int(mem_config.get("max_turns", 10))
+    if no_memory:
+        mem_scope = "session"  # treat as ephemeral when --no-memory
+    mem_data = _memory_mod.load_memory(mem_scope, hname)
 
     console.print(
         f"\n[bold cyan]Harness:[/bold cyan] [bold]{hname}[/bold] "
@@ -2015,6 +2032,17 @@ def harness_run(
     llm_config = LLMConfig.from_harness_config(cfg, overrides=harness_overrides)
 
     messages = build_messages(skill_data, rendered, vars_dict)
+
+    # Inject conversation history from memory between system message and user message
+    history = _memory_mod.get_history_messages(mem_data)
+    if history:
+        # Insert history after the system message (if present) and before the last user msg
+        if messages and messages[0]["role"] == "system":
+            messages = [messages[0]] + history + messages[1:]
+        else:
+            messages = history + messages
+        if mem_scope != "session":
+            console.print(f"[dim]Memory: {len(history)} turn(s) loaded (scope: {mem_scope})[/dim]")
 
     # Context budget check
     total_chars = sum(len(m.get("content", "")) for m in messages)
@@ -2159,10 +2187,128 @@ def harness_run(
         output=output_content,
     )
 
+    # Persist memory turn
+    user_input = " ".join(f"{k}={v}" for k, v in vars_dict.items())
+    _memory_mod.add_turn(mem_data, "user", user_input, tokens=llm_resp_input_tokens)
+    _memory_mod.add_turn(mem_data, "assistant", output_content, tokens=llm_resp_output_tokens)
+    _memory_mod.compress_memory(mem_data, mem_max_turns)
+    _memory_mod.save_memory(mem_data, mem_scope, hname)
+
 
 @app.callback()
 def _main() -> None:
     """HarnessKit — manage AI Agent runtimes like code."""
+
+
+# ---------------------------------------------------------------------------
+# memory commands (appended after all other command groups so the module
+# import of _memory_mod is already present)
+# ---------------------------------------------------------------------------
+
+
+@memory_app.command("show")
+def memory_show(
+    harness_name: str = typer.Argument(..., help="Harness name (or 'global')."),
+    scope: str = typer.Option(
+        "harness", "--scope", help="Memory scope: harness or global."
+    ),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max number of turns to display."),
+) -> None:
+    """Show stored conversation history for a harness."""
+    _require_init()
+    data = _memory_mod.load_memory(scope, harness_name)
+    turns = data.get("turns", [])
+    meta = data.get("metadata", {})
+
+    if not turns and not meta.get("summary"):
+        console.print(f"[dim]No memory found for [bold]{harness_name}[/bold] (scope: {scope}).[/dim]")
+        return
+
+    if meta.get("summary"):
+        console.print(f"\n[bold yellow]── Compressed History Summary ──[/bold yellow]")
+        console.print(meta["summary"])
+
+    if turns:
+        console.print(f"\n[bold cyan]── Conversation Turns (last {min(limit, len(turns))}/{len(turns)}) ──[/bold cyan]")
+        for t in turns[-limit:]:
+            role_color = "green" if t["role"] == "assistant" else "blue"
+            ts = t.get("timestamp", "")[:19]
+            console.print(f"\n[{role_color}][{t['role'].upper()}][/{role_color}] [dim]{ts}[/dim]")
+            console.print(t["content"])
+
+    console.print(
+        f"\n[dim]Total turns: {len(turns)} | Total tokens: {meta.get('total_tokens', 0)}[/dim]"
+    )
+
+
+@memory_app.command("list")
+def memory_list() -> None:
+    """List all persisted memory files."""
+    _require_init()
+    files = _memory_mod.list_memory_files()
+    if not files:
+        console.print("[dim]No memory files found.[/dim]")
+        return
+
+    table = Table(title="Memory Files", show_lines=False)
+    table.add_column("Harness", style="cyan")
+    table.add_column("Scope", style="dim")
+    table.add_column("Turns", justify="right")
+    table.add_column("Total Tokens", justify="right")
+    table.add_column("Has Summary")
+
+    for f in files:
+        table.add_row(
+            f["harness"],
+            f["scope"],
+            str(f["turns"]),
+            str(f["total_tokens"]),
+            "✓" if f["has_summary"] else "–",
+        )
+    console.print(table)
+
+
+@memory_app.command("search")
+def memory_search(
+    harness_name: str = typer.Argument(..., help="Harness name (or 'global')."),
+    keyword: str = typer.Argument(..., help="Search keyword."),
+    scope: str = typer.Option("harness", "--scope", help="Memory scope: harness or global."),
+) -> None:
+    """Search conversation history by keyword."""
+    _require_init()
+    data = _memory_mod.load_memory(scope, harness_name)
+    results = _memory_mod.search_memory(data, keyword)
+    if not results:
+        console.print(f"[dim]No turns matching '[bold]{keyword}[/bold]' found.[/dim]")
+        return
+
+    console.print(f"[bold cyan]{len(results)} turn(s) matching '{keyword}':[/bold cyan]\n")
+    for t in results:
+        role_color = "green" if t["role"] == "assistant" else "blue"
+        ts = t.get("timestamp", "")[:19]
+        console.print(f"[{role_color}][{t['role'].upper()}][/{role_color}] [dim]{ts}[/dim]")
+        console.print(t["content"])
+        console.print()
+
+
+@memory_app.command("clear")
+def memory_clear(
+    harness_name: str = typer.Argument(..., help="Harness name (or 'global')."),
+    scope: str = typer.Option("harness", "--scope", help="Memory scope: harness or global."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Clear persisted memory for a harness."""
+    _require_init()
+    if not yes:
+        confirmed = typer.confirm(f"Clear memory for '{harness_name}' (scope: {scope})?")
+        if not confirmed:
+            console.print("[dim]Aborted.[/dim]")
+            raise typer.Exit(0)
+    removed = _memory_mod.clear_memory(scope, harness_name)
+    if removed:
+        console.print(f"[green]✓ Memory cleared for [bold]{harness_name}[/bold].[/green]")
+    else:
+        console.print(f"[dim]No memory file found for [bold]{harness_name}[/bold].[/dim]")
 
 
 @app.command()
