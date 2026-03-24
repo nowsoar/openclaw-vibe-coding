@@ -1335,6 +1335,10 @@ harnesskit agent run code-assistant
 | `harnesskit blueprint list` | List all blueprints |
 | `harnesskit blueprint diff <a> <b>` | Diff two blueprint versions |
 | `harnesskit blueprint validate <name>` | Validate structure, refs, assets, goto targets, and cycles |
+| `harnesskit blueprint run <name>` | Execute blueprint steps (deterministic nodes) |
+| `harnesskit blueprint run <name> --dry-run` | Render commands without executing |
+| `harnesskit blueprint run <name> --step <id>` | Start from a specific step (skip earlier) |
+| `harnesskit blueprint run <name> --verbose` | Show full stdout/stderr for every step |
 | `harnesskit blueprint delete <name[@ver]>` | Delete a blueprint |
 
 Use `--help` on any command for full option details:
@@ -1468,6 +1472,89 @@ Blueprint 'my-pipeline@v0.0.1' — Validation Report
 
 ---
 
+### Blueprint Executor — Running Deterministic Steps (Phase 4.3)
+
+`harnesskit blueprint run` executes a blueprint's steps in order, providing real-time progress output.
+
+**Key features:**
+
+| Feature | Description |
+|---|---|
+| **Shell command execution** | `type: deterministic` steps run via `subprocess` with stdout/stderr capture |
+| **Timeout control** | Each step respects its `timeout` value (default 60 s) |
+| **Variable interpolation** | `{{inputs.x}}`, `{{steps.id.output}}`, `{{env.VAR}}` resolved at runtime |
+| **`on_fail: stop`** | Abort pipeline, mark remaining steps as skipped |
+| **`on_fail: continue`** | Continue to next step despite failure |
+| **`on_fail: goto:<id>`** | Jump to a specific step for error recovery |
+| **`--dry-run`** | Render all commands without executing (safe preview) |
+| **`--step <id>`** | Resume from a specific step (skip earlier ones) |
+| **`--verbose`** | Print stdout/stderr for every step |
+| **Output resolution** | Blueprint `outputs` block resolved against step results |
+
+**Example:**
+
+```bash
+# Create a pipeline
+cat > pipeline.yaml << 'EOF'
+name: lint-pipeline
+description: "Lint then summarise results"
+inputs:
+  - name: file_path
+    required: true
+
+steps:
+  - id: lint
+    type: deterministic
+    name: "Run flake8"
+    run: "flake8 {{inputs.file_path}} || true"
+    on_fail: continue
+    timeout: 30
+
+  - id: count
+    type: deterministic
+    name: "Count issues"
+    run: "echo {{steps.lint.output}} | wc -l"
+
+outputs:
+  issues: "{{steps.lint.output}}"
+  count:  "{{steps.count.output}}"
+EOF
+
+harnesskit blueprint create lint-pipeline --file pipeline.yaml
+
+# Dry-run preview (no commands executed)
+harnesskit blueprint run lint-pipeline --dry-run --var file_path=mycode.py
+
+# Execute for real
+harnesskit blueprint run lint-pipeline --var file_path=mycode.py
+
+# Verbose output (shows stdout/stderr per step)
+harnesskit blueprint run lint-pipeline --var file_path=mycode.py --verbose
+
+# Resume from a specific step
+harnesskit blueprint run lint-pipeline --var file_path=mycode.py --step count
+```
+
+Example terminal output:
+
+```
+Blueprint lint-pipeline@v0.0.1
+─────────────────────────────
+  ✓ lint  Run flake8  0.31s
+  ✓ count Count issues  0.05s
+─────────────────────────────
+Outputs:
+  issues: mycode.py:12:1: E302 ...
+  count: 3
+
+✓ Blueprint 'lint-pipeline' completed successfully (0.36s)
+```
+
+> **Note:** `type: agentic` steps (Harness / Skill calls) are skipped with a
+> placeholder message until Phase 4.4 implements the agentic executor.
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -1503,4 +1590,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 4.2 complete** — Blueprint enhanced static validation: five-category rich report (`blueprint validate`) covering structure, variable references, asset existence (harness/skill on disk), goto target resolution, and circular dependency detection. `--no-check-assets` flag for CI without live assets. 26 new pytest tests (737 total) all passing.
+Current status: **Phase 4.3 complete** — Blueprint deterministic node executor: `blueprint run` executes shell-command steps with stdout/stderr capture, timeout control, `on_fail` branching (`stop` / `continue` / `goto:<id>`), `{{inputs.x}}` / `{{steps.id.output}}` / `{{env.VAR}}` interpolation, `--dry-run`, `--step <id>`, and `--verbose` flags. 43 new pytest tests (780 total, 100 % passing).

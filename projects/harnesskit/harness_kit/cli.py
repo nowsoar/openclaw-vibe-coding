@@ -2954,6 +2954,148 @@ def blueprint_validate(
 
 
 # ---------------------------------------------------------------------------
+# blueprint run (Phase 4.3 — deterministic executor)
+# ---------------------------------------------------------------------------
+
+
+@blueprint_app.command("run")
+def blueprint_run(
+    ref: str = typer.Argument(..., help="Blueprint name or name@version."),
+    var: list[str] = typer.Option(
+        [],
+        "--var",
+        "-v",
+        help="Input variable as key=value. Can be repeated.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Render commands without executing them."
+    ),
+    start_step: Optional[str] = typer.Option(
+        None, "--step", help="Start execution from this step ID (skips earlier steps)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", help="Show step stdout/stderr detail."),
+) -> None:
+    """Run a blueprint — execute its steps in order.
+
+    Deterministic steps (shell commands) are executed immediately.
+    Agentic steps are skipped until Phase 4.4.
+    """
+    from harness_kit import blueprint_executor as _exec_mod
+
+    _require_init()
+    name, version = _parse_name_version(ref)
+
+    try:
+        data = _blueprint_mod.load_blueprint(name, version)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    # Parse --var key=value pairs
+    inputs: dict[str, str] = {}
+    for v in var:
+        if "=" not in v:
+            console.print(
+                f"[red]✗ Invalid --var format: [bold]{v}[/bold] (expected key=value)[/red]"
+            )
+            raise typer.Exit(1)
+        k, val = v.split("=", 1)
+        inputs[k.strip()] = val
+
+    # Check required inputs
+    for inp_def in data.get("inputs") or []:
+        inp_name = inp_def.get("name", "")
+        if inp_def.get("required", True) and inp_name not in inputs:
+            if inp_def.get("default") is not None:
+                inputs[inp_name] = str(inp_def["default"])
+            else:
+                console.print(
+                    f"[red]✗ Missing required input: [bold]{inp_name}[/bold][/red]\n"
+                    f"  Use [bold]--var {inp_name}=...[/bold] to provide it."
+                )
+                raise typer.Exit(1)
+
+    display_version = version or _blueprint_mod.get_current_version(name)
+    mode_tag = "[dim](dry-run)[/dim]" if dry_run else ""
+    console.print(
+        f"\n[bold]Blueprint[/bold] [cyan]{name}@{display_version}[/cyan] {mode_tag}"
+    )
+    console.rule()
+
+    # Run
+    result = _exec_mod.execute_blueprint(
+        data,
+        inputs,
+        dry_run=dry_run,
+        start_step=start_step,
+    )
+
+    # Display step results
+    for step_res in result.steps:
+        stype = step_res.step_type
+        color = "green" if stype == "deterministic" else ("yellow" if stype == "agentic" else "dim")
+
+        if step_res.status == "success":
+            icon = "[green]✓[/green]"
+        elif step_res.status == "failed":
+            icon = "[red]✗[/red]"
+        elif step_res.status == "timeout":
+            icon = "[red]⏱[/red]"
+        elif step_res.status == "dry_run":
+            icon = "[dim]○[/dim]"
+        else:
+            icon = "[dim]–[/dim]"
+
+        duration_tag = f"[dim]{step_res.duration:.2f}s[/dim]" if step_res.duration > 0 else ""
+        console.print(
+            f"  {icon} [{color}]{step_res.step_id}[/{color}]"
+            f" [dim]{step_res.step_name}[/dim] {duration_tag}"
+        )
+
+        if verbose or step_res.status in ("failed", "timeout"):
+            if step_res.output.strip():
+                console.print(f"    [dim]stdout:[/dim] {step_res.output.strip()}")
+            if step_res.stderr.strip():
+                console.print(f"    [dim]stderr:[/dim] {step_res.stderr.strip()}")
+        elif dry_run and step_res.output:
+            console.print(f"    [dim]{step_res.output}[/dim]")
+
+        if step_res.error and step_res.status not in ("failed", "timeout"):
+            console.print(f"    [red]error: {step_res.error}[/red]")
+
+    console.rule()
+
+    # Outputs
+    if result.outputs:
+        console.print("\n[bold]Outputs:[/bold]")
+        for k, v in result.outputs.items():
+            truncated = v[:200] + "…" if len(v) > 200 else v
+            console.print(f"  [cyan]{k}[/cyan]: {truncated}")
+
+    # Summary line
+    duration_str = f"{result.duration:.2f}s"
+    if result.status == "success":
+        console.print(
+            f"\n[green]✓ Blueprint '{name}' completed successfully[/green] "
+            f"[dim]({duration_str})[/dim]\n"
+        )
+    elif result.status == "dry_run":
+        console.print(
+            f"\n[dim]Dry-run complete — no commands executed ({duration_str})[/dim]\n"
+        )
+    elif result.status == "stopped":
+        reason = result.stop_reason or "step failed"
+        console.print(f"\n[red]✗ Blueprint stopped: {reason}[/red] [dim]({duration_str})[/dim]\n")
+        raise typer.Exit(1)
+    else:  # "failed"
+        console.print(
+            f"\n[yellow]⚠ Blueprint '{name}' finished with failures[/yellow] "
+            f"[dim]({duration_str})[/dim]\n"
+        )
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # blueprint delete
 # ---------------------------------------------------------------------------
 
