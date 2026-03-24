@@ -1,11 +1,13 @@
 """
-Blueprint node executor — Phase 4.3 (deterministic) + Phase 4.4 (agentic).
+Blueprint node executor — Phase 4.3 (deterministic) + Phase 4.4 (agentic)
+                         + Phase 4.5 (variable passing system with filters).
 
 Supports:
   - Shell command execution via subprocess
   - stdout/stderr capture and timeout control
   - on_fail: stop / continue / goto:<step_id>
   - Variable interpolation: {{inputs.x}}, {{steps.y.output}}, {{env.VAR}}
+  - Pipe filters: {{steps.x.output | truncate:100}}, {{steps.x.output | json}}
   - Agentic steps: call Skill or Harness via LLM with retries and timeout
   - dry_run mode (renders commands without executing)
 """
@@ -13,6 +15,7 @@ Supports:
 from __future__ import annotations
 
 import concurrent.futures
+import json
 import os
 import re
 import subprocess
@@ -61,11 +64,59 @@ class BlueprintRunResult:
 
 _VAR_RE = re.compile(r"\{\{\s*([^}]+?)\s*\}\}")
 
+# ---------------------------------------------------------------------------
+# Filter application
+# ---------------------------------------------------------------------------
+
+_TRUNCATE_RE = re.compile(r"^truncate:(\d+)$")
+
+
+def _apply_filter(value: str, filter_expr: str) -> str:
+    """Apply a single named filter to *value*.
+
+    Supported filters:
+    - ``truncate:N``   — keep first N characters, append ``...`` if truncated
+    - ``json``         — JSON-encode the value (strings are double-quoted;
+                         valid JSON is re-serialised for consistency)
+    - ``upper``        — convert to upper-case
+    - ``lower``        — convert to lower-case
+    - ``strip``        — strip leading/trailing whitespace
+
+    Unknown filters are silently ignored (value is returned unchanged).
+    """
+    filter_expr = filter_expr.strip()
+
+    if filter_expr == "json":
+        try:
+            parsed = json.loads(value)
+            return json.dumps(parsed, ensure_ascii=False)
+        except (json.JSONDecodeError, ValueError):
+            return json.dumps(value, ensure_ascii=False)
+
+    m = _TRUNCATE_RE.match(filter_expr)
+    if m:
+        n = int(m.group(1))
+        if len(value) > n:
+            return value[:n] + "..."
+        return value
+
+    if filter_expr == "upper":
+        return value.upper()
+
+    if filter_expr == "lower":
+        return value.lower()
+
+    if filter_expr == "strip":
+        return value.strip()
+
+    # Unknown filter — leave unchanged
+    return value
+
 
 def interpolate_variables(template: str, context: dict[str, Any]) -> str:
     """Replace ``{{path.to.value}}`` placeholders with values from *context*.
 
-    Supported patterns:
+    Supported path patterns:
     - ``{{inputs.name}}``          — blueprint input variable
     - ``{{steps.id.output}}``      — previous step's stdout
     - ``{{steps.id.stderr}}``      — previous step's stderr
@@ -73,26 +124,46 @@ def interpolate_variables(template: str, context: dict[str, Any]) -> str:
     - ``{{steps.id.status}}``      — previous step's status string
     - ``{{env.VAR_NAME}}``         — OS environment variable
 
+    Pipe filters (Phase 4.5):
+    - ``{{steps.id.output | truncate:100}}``  — truncate to 100 chars
+    - ``{{steps.id.output | json}}``          — JSON-encode the value
+    - ``{{steps.id.output | upper}}``         — upper-case
+    - ``{{steps.id.output | lower}}``         — lower-case
+    - ``{{steps.id.output | strip}}``         — strip whitespace
+    - Filters can be chained: ``{{x | truncate:10 | json}}``
+
     Unknown paths are left as-is.
     """
 
     def _replace(match: re.Match) -> str:
-        path = match.group(1).strip()
-        parts = path.split(".")
+        raw = match.group(1).strip()
+        # Split into path and zero or more filter expressions
+        parts_pipe = [p.strip() for p in raw.split("|")]
+        path = parts_pipe[0]
+        filters = parts_pipe[1:]
+
+        path_parts = path.split(".")
         try:
             # env.VAR shortcut
-            if parts[0] == "env" and len(parts) == 2:
-                return os.environ.get(parts[1], match.group(0))
-
-            node: Any = context
-            for part in parts:
-                if isinstance(node, dict):
-                    node = node[part]
-                else:
-                    node = getattr(node, part)
-            return str(node) if node is not None else ""
+            if path_parts[0] == "env" and len(path_parts) == 2:
+                value = os.environ.get(path_parts[1], None)
+                if value is None:
+                    return match.group(0)  # leave unchanged
+            else:
+                node: Any = context
+                for part in path_parts:
+                    if isinstance(node, dict):
+                        node = node[part]
+                    else:
+                        node = getattr(node, part)
+                value = str(node) if node is not None else ""
         except (KeyError, AttributeError, TypeError):
             return match.group(0)  # leave unchanged
+
+        for f in filters:
+            value = _apply_filter(value, f)
+
+        return value
 
     return _VAR_RE.sub(_replace, str(template))
 

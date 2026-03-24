@@ -1396,14 +1396,39 @@ outputs:
   summary: "{{steps.summary.output}}"
 ```
 
-### Variable Interpolation
+### Variable Interpolation (Phase 4.5)
 
 | Syntax | Meaning |
 |--------|---------|
 | `{{inputs.file_path}}` | Blueprint-level input value |
 | `{{steps.lint.output}}` | stdout / result of the `lint` step |
+| `{{steps.lint.stderr}}` | stderr of a step |
 | `{{steps.lint.exit_code}}` | Exit code of a deterministic step |
-| `{{env.MY_VAR}}` | Environment variable (Phase 4.5) |
+| `{{steps.lint.status}}` | Step status string (`success`, `failed`, …) |
+| `{{env.MY_VAR}}` | OS environment variable |
+
+#### Pipe Filters
+
+Variables can be transformed with `|` filters before being inserted:
+
+| Filter | Example | Result |
+|--------|---------|--------|
+| `truncate:N` | `{{steps.run.output \| truncate:100}}` | Keep first N chars, append `...` if longer |
+| `json` | `{{steps.run.output \| json}}` | JSON-encode the value (adds quotes, escapes specials) |
+| `upper` | `{{inputs.lang \| upper}}` | Convert to upper-case |
+| `lower` | `{{inputs.lang \| lower}}` | Convert to lower-case |
+| `strip` | `{{steps.run.output \| strip}}` | Strip leading/trailing whitespace |
+
+Filters can be **chained**:
+
+```yaml
+# Strip whitespace, truncate, then JSON-encode
+run: "echo '{{steps.prev.output | strip | truncate:80 | json}}'"
+
+# In outputs block
+outputs:
+  summary: "{{steps.review.output | strip | truncate:200}}"
+```
 
 ### `harnesskit blueprint` Commands
 
@@ -1485,7 +1510,7 @@ Blueprint 'my-pipeline@v0.0.1' — Validation Report
 | **Harness model config** | When a step references a `harness:`, its `model:` settings override global defaults |
 | **Retry with back-off** | `max_retries: N` retries on transient errors (rate-limit, 429, 503…) with exponential back-off |
 | **Timeout control** | Each step respects its `timeout` value (default 60 s for deterministic, 120 s for agentic) |
-| **Variable interpolation** | `{{inputs.x}}`, `{{steps.id.output}}`, `{{env.VAR}}` resolved at runtime |
+| **Variable interpolation** | `{{inputs.x}}`, `{{steps.id.output}}`, `{{env.VAR}}` resolved at runtime; pipe filters (`truncate:N`, `json`, `upper`, `lower`, `strip`) transform values inline |
 | **`on_fail: stop`** | Abort pipeline, mark remaining steps as skipped |
 | **`on_fail: continue`** | Continue to next step despite failure |
 | **`on_fail: goto:<id>`** | Jump to a specific step for error recovery |
@@ -1620,4 +1645,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 4.4 complete** — Agentic node executor: `type: agentic` steps in blueprints now call a Skill or Harness via LLM, with exponential-backoff retries (`max_retries`), configurable timeout, harness model-config propagation, `on_fail` branching, and call logging to `.harness/logs/calls.jsonl`. 23 new pytest tests (803 total, 100 % passing).
+Current status: **Phase 4.5 complete** — Variable passing system with pipe filters: `{{value | truncate:N}}`, `{{value | json}}`, `{{value | upper}}`, `{{value | lower}}`, `{{value | strip}}` — filters are chainable and work in `run` commands, `inputs` maps, and the `outputs` block. 37 new pytest tests (840 total, 100 % passing).
