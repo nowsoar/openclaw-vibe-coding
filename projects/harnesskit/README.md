@@ -1345,6 +1345,12 @@ harnesskit agent run code-assistant
 | `harnesskit blueprint run <name> --step <id>` | Start from a specific step (skip earlier) |
 | `harnesskit blueprint run <name> --verbose` | Show full stdout/stderr for every step |
 | `harnesskit blueprint delete <name[@ver]>` | Delete a blueprint |
+| `harnesskit health check` | Run full health check (staleness, success rate, unused assets) |
+| `harnesskit health check --stale-days 7` | Custom staleness threshold |
+| `harnesskit health check --success-threshold 0.9` | Custom success-rate threshold |
+| `harnesskit health fix` | Preview auto-fixable issues |
+| `harnesskit health fix --yes` | Apply all auto-fixes (delete unused assets) |
+| `harnesskit health fix --dry-run` | Show what would be fixed without making changes |
 
 Use `--help` on any command for full option details:
 
@@ -2538,8 +2544,89 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 ---
 
+## Phase 6.5 — Harness 健康检查 (Harness Health Check)
+
+Phase 6.5 adds a comprehensive **health check system** that proactively surfaces problems in your Harness workspace before they cause failures.
+
+### What is checked
+
+| Category | Severity | Description |
+|---|---|---|
+| **Staleness** | warning / critical | Skills not updated in N days (default 14). Critical when ≥ 2× threshold. |
+| **Success Rate** | warning / critical | Skills whose call-log success rate is below threshold (default 80%). Critical when < 75% of threshold. Skipped if fewer than 5 calls. |
+| **Unused Assets** | warning | Prompts, schemas, contexts, and rules not referenced by any skill or harness. These are **auto-fixable**. |
+| **Schema Outdated** | warning | Schemas not updated in N days (default 14). |
+
+### `harnesskit health check`
+
+```bash
+harnesskit health check                           # default thresholds (14 days, 80% success)
+harnesskit health check --stale-days 7            # flag skills older than 7 days
+harnesskit health check --success-threshold 0.9   # require 90% success rate
+```
+
+**Example output:**
+
+```
+HarnessKit Health Check
+
+Stale Assets (1 issue(s))
+┌──────────┬────────────┬────────────────┬──────────────────────────────────────────┐
+│ Severity │ Asset Type │ Name           │ Message                                  │
+├──────────┼────────────┼────────────────┼──────────────────────────────────────────┤
+│ WARNING  │ skill      │ old-classifier │ Skill 'old-classifier' has not been      │
+│          │            │                │ updated in 18 days (threshold: 14 days)  │
+└──────────┴────────────┴────────────────┴──────────────────────────────────────────┘
+
+Unused Assets (2 issue(s))
+┌──────────┬────────────┬──────────────┬─────────────────────────────────────────────────┐
+│ Severity │ Asset Type │ Name         │ Message                                         │
+├──────────┼────────────┼──────────────┼─────────────────────────────────────────────────┤
+│ WARNING  │ prompt     │ draft-prompt │ Prompt 'draft-prompt' is not referenced by any  │
+│          │            │              │ skill or harness (auto-fixable)                 │
+└──────────┴────────────┴──────────────┴─────────────────────────────────────────────────┘
+
+Summary: 0 critical, 3 warning — 2 auto-fixable
+Scanned: 3 skill(s), 2 schema(s), 4 primitive asset(s)
+
+Run harnesskit health fix to auto-fix 2 issue(s).
+```
+
+Exit code is **1** when any critical issues are found, **0** otherwise.
+
+### `harnesskit health fix`
+
+```bash
+harnesskit health fix               # preview fixable issues, then prompt for confirmation
+harnesskit health fix --yes         # skip confirmation prompt
+harnesskit health fix --dry-run     # show what would be done without making changes
+```
+
+Auto-fixable issues: currently **unused assets** (prompts, schemas, contexts, rules not referenced by any skill or harness). The fix deletes the asset directory / file.
+
+**Example:**
+
+```bash
+$ harnesskit health fix --yes
+Auto-fixable issues (2 found)
+┌───┬──────────┬────────────┬──────────────┬─────────────────────────────────────┐
+│ # │ Severity │ Asset Type │ Name         │ Fix Action                          │
+├───┼──────────┼────────────┼──────────────┼─────────────────────────────────────┤
+│ 1 │ WARNING  │ prompt     │ draft-prompt │ harnesskit prompt delete draft-prompt │
+│ 2 │ WARNING  │ rule       │ unused-rule  │ harnesskit rule delete unused-rule  │
+└───┴──────────┴────────────┴──────────────┴─────────────────────────────────────┘
+
+Fix Report
+  ✓ Deleted: .harness/prompts/draft-prompt
+  ✓ Deleted: .harness/rules/unused-rule.yaml
+
+Fixed: 2  Failed: 0
+```
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 6.4 complete** — 改进飞轮核心 — `harnesskit improve log/history/report` records structured improvement entries (issue → root-cause → fix → versions → eval delta) per skill, with time-filtered history and period-based aggregation reports. 29 new pytest tests (all passing, 1171 total).
+Current status: **Phase 6.5 complete** — Harness 健康检查 — `harnesskit health check` / `health fix` runs four health checks (skill staleness, low success rates, unused assets, outdated schemas), reports issues by severity (warning/critical), and auto-fixes unused assets with `--yes` or `--dry-run`. 39 new pytest tests (all passing, 1210 total).

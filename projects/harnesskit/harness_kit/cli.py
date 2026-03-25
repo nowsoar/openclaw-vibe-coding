@@ -35,6 +35,7 @@ from harness_kit import eval as _eval_mod
 from harness_kit import cost_tracker as _cost_tracker_mod
 from harness_kit import stats as _stats_mod
 from harness_kit import improvement as _improve_mod
+from harness_kit import health as _health_mod
 from harness_kit.llm import LLMConfig, build_messages, call_llm
 
 app = typer.Typer(
@@ -142,6 +143,13 @@ app.add_typer(stats_app, name="stats")
 
 improve_app = typer.Typer(help="Improvement flywheel — log and track Harness/Skill improvements.", no_args_is_help=True)
 app.add_typer(improve_app, name="improve")
+
+# ---------------------------------------------------------------------------
+# health sub-app
+# ---------------------------------------------------------------------------
+
+health_app = typer.Typer(help="Harness health check — staleness, success rates, unused assets.", no_args_is_help=True)
+app.add_typer(health_app, name="health")
 
 
 def _require_init() -> None:
@@ -4425,6 +4433,199 @@ def improve_report_cmd(
             console.print(f"  [dim]{ts}[/dim]  [cyan]{sk}[/cyan]  {bv} → [bold]{av}[/bold]{gain_str}")
             console.print(f"    Fix: {rec.get('fix', '')}")
         console.print()
+
+
+# ---------------------------------------------------------------------------
+# health check
+# ---------------------------------------------------------------------------
+
+
+@health_app.command("check")
+def health_check_cmd(
+    success_threshold: float = typer.Option(
+        0.8, "--success-threshold", "-t",
+        help="Minimum acceptable success rate (0.0–1.0) for a skill.",
+    ),
+    stale_days: int = typer.Option(
+        14, "--stale-days", "-s",
+        help="Days since last update before a skill/schema is considered stale.",
+    ),
+) -> None:
+    """Run a health check on the Harness workspace and report issues."""
+    _require_init()
+
+    report = _health_mod.run_health_check(
+        success_threshold=success_threshold,
+        stale_days=stale_days,
+    )
+
+    console.print("\n[bold]HarnessKit Health Check[/bold]\n")
+
+    if not report.issues:
+        console.print("[green bold]✓ Everything looks healthy![/green bold]")
+        console.print(
+            f"[dim]Scanned: {report.scanned_skills} skill(s), "
+            f"{report.scanned_schemas} schema(s), "
+            f"{report.scanned_assets} primitive asset(s)[/dim]"
+        )
+        return
+
+    # Group by category
+    by_category: dict[str, list] = {}
+    for issue in report.issues:
+        by_category.setdefault(issue.category, []).append(issue)
+
+    # Display issues grouped by category
+    category_labels = {
+        "staleness": "Stale Assets",
+        "success_rate": "Low Success Rates",
+        "unused_asset": "Unused Assets",
+        "schema_outdated": "Outdated Schemas",
+    }
+
+    for category, issues in by_category.items():
+        label = category_labels.get(category, category)
+        console.print(f"[bold]{label}[/bold] ({len(issues)} issue(s))")
+        table = Table(show_header=True, show_lines=False)
+        table.add_column("Severity", style="bold", width=10)
+        table.add_column("Asset Type", width=10)
+        table.add_column("Name", style="cyan")
+        table.add_column("Message")
+        table.add_column("Fix Hint", style="dim")
+
+        for issue in issues:
+            sev_style = "red" if issue.severity == "critical" else "yellow"
+            sev_label = f"[{sev_style}]{issue.severity.upper()}[/{sev_style}]"
+            fix_icon = " [green](auto-fixable)[/green]" if issue.auto_fixable else ""
+            table.add_row(
+                sev_label,
+                issue.asset_type,
+                issue.name,
+                issue.message,
+                issue.fix_hint + fix_icon,
+            )
+        console.print(table)
+        console.print()
+
+    # Summary
+    n_critical = len(report.critical_issues)
+    n_warning = len(report.warning_issues)
+    n_fixable = report.auto_fixable_count
+
+    console.print(
+        f"[bold]Summary:[/bold] "
+        f"[red]{n_critical} critical[/red], "
+        f"[yellow]{n_warning} warning[/yellow]"
+        f" — {n_fixable} auto-fixable"
+    )
+    console.print(
+        f"[dim]Scanned: {report.scanned_skills} skill(s), "
+        f"{report.scanned_schemas} schema(s), "
+        f"{report.scanned_assets} primitive asset(s)[/dim]"
+    )
+    if n_fixable > 0:
+        console.print(
+            f"\n[dim]Run [bold]harnesskit health fix[/bold] to auto-fix "
+            f"{n_fixable} issue(s).[/dim]"
+        )
+
+    if n_critical > 0:
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# health fix
+# ---------------------------------------------------------------------------
+
+
+@health_app.command("fix")
+def health_fix_cmd(
+    success_threshold: float = typer.Option(
+        0.8, "--success-threshold", "-t",
+        help="Minimum acceptable success rate (0.0–1.0) for a skill.",
+    ),
+    stale_days: int = typer.Option(
+        14, "--stale-days", "-s",
+        help="Days since last update before a skill/schema is considered stale.",
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y",
+        help="Skip confirmation prompt and apply all fixes immediately.",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Show what would be fixed without making any changes.",
+    ),
+) -> None:
+    """Auto-fix fixable health issues (unused assets).
+
+    By default shows a preview and asks for confirmation.
+    Use --yes to skip the prompt or --dry-run to only preview.
+    """
+    _require_init()
+
+    report = _health_mod.run_health_check(
+        success_threshold=success_threshold,
+        stale_days=stale_days,
+    )
+
+    fixable = [i for i in report.issues if i.auto_fixable]
+
+    if not fixable:
+        console.print("[green]✓ No auto-fixable issues found.[/green]")
+        n_total = len(report.issues)
+        if n_total > 0:
+            console.print(
+                f"[dim]{n_total} issue(s) found but none can be fixed automatically. "
+                "Run [bold]harnesskit health check[/bold] for details.[/dim]"
+            )
+        return
+
+    console.print(f"\n[bold]Auto-fixable issues[/bold] ({len(fixable)} found)\n")
+    table = Table(show_header=True, show_lines=False)
+    table.add_column("#", justify="right", width=4)
+    table.add_column("Severity", width=10)
+    table.add_column("Asset Type", width=10)
+    table.add_column("Name", style="cyan")
+    table.add_column("Fix Action")
+
+    for idx, issue in enumerate(fixable, 1):
+        sev_style = "red" if issue.severity == "critical" else "yellow"
+        sev_label = f"[{sev_style}]{issue.severity.upper()}[/{sev_style}]"
+        table.add_row(str(idx), sev_label, issue.asset_type, issue.name, issue.fix_hint)
+    console.print(table)
+    console.print()
+
+    if dry_run:
+        fix_report = _health_mod.auto_fix(report, dry_run=True)
+        console.print("[dim][dry-run] No changes were made.[/dim]")
+        for result in fix_report.results:
+            icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"
+            console.print(f"  {icon} {result.message}")
+        return
+
+    if not yes:
+        confirm = typer.confirm(
+            f"Apply {len(fixable)} fix(es)? This will delete unused assets."
+        )
+        if not confirm:
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(0)
+
+    fix_report = _health_mod.auto_fix(report, dry_run=False)
+
+    console.print("[bold]Fix Report[/bold]\n")
+    for result in fix_report.results:
+        icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"
+        console.print(f"  {icon} {result.message}")
+
+    console.print(
+        f"\n[bold]Fixed:[/bold] {fix_report.fixed_count}  "
+        f"[bold]Failed:[/bold] {fix_report.failed_count}"
+    )
+
+    if fix_report.failed_count > 0:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
