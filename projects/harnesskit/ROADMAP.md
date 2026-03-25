@@ -898,7 +898,7 @@ Blueprint（工作流编排）
 
 **目标**：调用追踪、成本分析、Harness 健康检查、改进飞轮。
 
-### Phase 6.1：调用日志系统
+### Phase 6.1：调用日志系统 ✅
 **任务**：
 1. 日志格式（JSON Lines）
    ```json
@@ -910,8 +910,8 @@ Blueprint（工作流编排）
 4. 实现 `harnesskit logs export --format csv --since 7d` —— 导出日志
 
 **验收标准**：
-- 日志记录完整
-- 搜索和导出功能正常
+- ✅ 日志记录完整（含 `cost` 字段）
+- ✅ 搜索和导出功能正常（`--since` 时间窗口过滤、CSV/JSONL 导出）
 
 ---
 

@@ -298,7 +298,7 @@ class TestFullSkillWorkflow:
         code, out = invoke("logs", "tail", "--n", "5")
         assert code == 0
         # Rich may truncate "code-reviewer" in the table; check for prefix
-        assert "code-review" in out
+        assert "code-r" in out
 
     def test_doctor_passes_after_full_phase2_setup(self, full_workspace: Path) -> None:
         """Doctor reports no broken references after full Phase 2 setup."""

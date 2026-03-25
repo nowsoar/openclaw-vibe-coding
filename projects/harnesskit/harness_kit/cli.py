@@ -1551,10 +1551,11 @@ def skill_deps(
 @logs_app.command("tail")
 def logs_tail(
     n: int = typer.Option(20, "--n", "-n", help="Number of recent records to show."),
+    since: Optional[str] = typer.Option(None, "--since", help="Only show records within this window (e.g. '1d', '2h', '30m')."),
 ) -> None:
     """Show the most recent LLM call log entries."""
     _require_init()
-    records = _call_logger_mod.tail_logs(n=n)
+    records = _call_logger_mod.tail_logs(n=n, since=since)
     if not records:
         console.print("[dim]No call logs found.[/dim]")
         return
@@ -1564,7 +1565,8 @@ def logs_tail(
     table.add_column("Skill", style="cyan")
     table.add_column("Model", style="blue")
     table.add_column("Status", style="bold")
-    table.add_column("Tokens ↑↓", justify="right")
+    table.add_column("Tokens ↑/↓", justify="right")
+    table.add_column("Cost (USD)", justify="right")
     table.add_column("Duration", justify="right")
 
     for rec in records:
@@ -1572,6 +1574,8 @@ def logs_tail(
         status_style = "green" if status == "success" else "red" if status == "error" else "yellow"
         ts = rec.get("timestamp", "")[:19].replace("T", " ")
         tokens = f"{rec.get('input_tokens', 0)} / {rec.get('output_tokens', 0)}"
+        cost_val = rec.get("cost")
+        cost_str = f"${cost_val:.4f}" if cost_val is not None else "-"
         duration = f"{rec.get('duration', 0):.2f}s"
         table.add_row(
             ts,
@@ -1579,6 +1583,7 @@ def logs_tail(
             rec.get("model", "?"),
             f"[{status_style}]{status}[/{status_style}]",
             tokens,
+            cost_str,
             duration,
         )
     console.print(table)
@@ -1588,21 +1593,23 @@ def logs_tail(
 def logs_search(
     skill: Optional[str] = typer.Option(None, "--skill", help="Filter by skill name."),
     status: Optional[str] = typer.Option(None, "--status", help="Filter by status (success/error)."),
+    since: Optional[str] = typer.Option(None, "--since", help="Only show records within this window (e.g. '1d', '2h', '30m')."),
     limit: int = typer.Option(50, "--limit", "-l", help="Maximum number of results."),
 ) -> None:
     """Search call logs with optional filters."""
     _require_init()
-    records = _call_logger_mod.search_logs(skill=skill, status=status, limit=limit)
+    records = _call_logger_mod.search_logs(skill=skill, status=status, since=since, limit=limit)
     if not records:
         console.print("[dim]No matching call logs found.[/dim]")
         return
 
-    table = Table(title=f"Call Logs (skill={skill or '*'}, status={status or '*'})", show_lines=False)
+    table = Table(title=f"Call Logs (skill={skill or '*'}, status={status or '*'}, since={since or 'all'})", show_lines=False)
     table.add_column("Timestamp", style="dim", no_wrap=True)
     table.add_column("Skill", style="cyan")
     table.add_column("Model", style="blue")
     table.add_column("Status", style="bold")
     table.add_column("Tokens ↑/↓", justify="right")
+    table.add_column("Cost (USD)", justify="right")
     table.add_column("Duration", justify="right")
 
     for rec in records:
@@ -1610,6 +1617,8 @@ def logs_search(
         status_style = "green" if status_val == "success" else "red" if status_val == "error" else "yellow"
         ts = rec.get("timestamp", "")[:19].replace("T", " ")
         tokens = f"{rec.get('input_tokens', 0)} / {rec.get('output_tokens', 0)}"
+        cost_val = rec.get("cost")
+        cost_str = f"${cost_val:.4f}" if cost_val is not None else "-"
         duration = f"{rec.get('duration', 0):.2f}s"
         table.add_row(
             ts,
@@ -1617,9 +1626,34 @@ def logs_search(
             rec.get("model", "?"),
             f"[{status_style}]{status_val}[/{status_style}]",
             tokens,
+            cost_str,
             duration,
         )
     console.print(table)
+
+
+@logs_app.command("export")
+def logs_export(
+    fmt: str = typer.Option("csv", "--format", "-f", help="Export format: csv or jsonl."),
+    since: Optional[str] = typer.Option(None, "--since", help="Only export records within this window (e.g. '7d', '2h')."),
+    skill: Optional[str] = typer.Option(None, "--skill", help="Filter by skill name."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write to file instead of stdout."),
+) -> None:
+    """Export call logs as CSV or JSON Lines."""
+    _require_init()
+    if fmt not in ("csv", "jsonl"):
+        console.print("[red]Error:[/red] --format must be 'csv' or 'jsonl'.")
+        raise typer.Exit(1)
+    data = _call_logger_mod.export_logs(since=since, skill=skill, fmt=fmt)
+    if not data:
+        console.print("[dim]No call logs to export.[/dim]")
+        return
+    if output:
+        output.write_text(data, encoding="utf-8")
+        console.print(f"[green]Exported {len(data.splitlines())} records to {output}[/green]")
+    else:
+        # Print plain text (no Rich markup so the output is machine-readable)
+        print(data, end="")
 
 
 # ---------------------------------------------------------------------------

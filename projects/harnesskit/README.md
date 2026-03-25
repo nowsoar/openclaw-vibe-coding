@@ -2127,6 +2127,119 @@ for entry in entries:
 
 ---
 
+## Phase 6.1 — 调用日志系统 (Call Log System)
+
+Phase 6.1 adds a full-featured call log system for observability: every LLM call is recorded as a JSON Lines entry, and you can tail, search, and export those logs from the CLI.
+
+### Log Record Format
+
+Every `skill run` or `harness run` appends a record to `.harness/logs/calls.jsonl`:
+
+```json
+{
+  "timestamp": "2026-03-25T10:00:00+00:00",
+  "type": "llm_call",
+  "skill": "code-reviewer",
+  "model": "gpt-4o",
+  "input_tokens": 500,
+  "output_tokens": 200,
+  "total_tokens": 700,
+  "cost": 0.015,
+  "duration": 2.5,
+  "status": "success"
+}
+```
+
+### `harnesskit logs tail`
+
+Show the most recent LLM call log entries:
+
+```bash
+# Last 20 entries (default)
+harnesskit logs tail
+
+# Last 50 entries
+harnesskit logs tail --n 50
+
+# Only entries from the last 24 hours
+harnesskit logs tail --since 1d
+
+# Last 2 hours
+harnesskit logs tail --since 2h
+```
+
+### `harnesskit logs search`
+
+Search and filter call logs:
+
+```bash
+# Filter by skill name
+harnesskit logs search --skill code-reviewer
+
+# Filter by status
+harnesskit logs search --status error
+
+# Filter by time window
+harnesskit logs search --since 1d
+
+# Combine filters
+harnesskit logs search --skill code-reviewer --since 7d --limit 100
+```
+
+Supported `--since` units: `d` (days), `h` (hours), `m` (minutes), `s` (seconds).
+
+### `harnesskit logs export`
+
+Export logs as CSV or JSON Lines for further analysis:
+
+```bash
+# Export all logs as CSV to stdout
+harnesskit logs export --format csv
+
+# Export last 7 days as CSV to a file
+harnesskit logs export --format csv --since 7d --output logs.csv
+
+# Export as JSON Lines
+harnesskit logs export --format jsonl --since 1d
+
+# Filter by skill and export
+harnesskit logs export --format csv --skill code-reviewer --since 30d
+```
+
+CSV columns: `timestamp`, `type`, `skill`, `model`, `input_tokens`, `output_tokens`, `total_tokens`, `cost`, `duration`, `status`, `error`, `violation_count`.
+
+### Python API
+
+```python
+from harness_kit import call_logger as cl
+from pathlib import Path
+
+# Log a call programmatically
+cl.log_call(
+    skill="my-skill",
+    model="gpt-4o",
+    input_tokens=200,
+    output_tokens=80,
+    duration=1.5,
+    cost=0.012,
+    status="success",
+)
+
+# Tail the last 10 entries from the last day
+records = cl.tail_logs(n=10, since="1d")
+
+# Search by skill and time window
+results = cl.search_logs(skill="my-skill", since="7d", limit=50)
+
+# Export as CSV string
+csv_data = cl.export_logs(fmt="csv", since="7d")
+
+# Export as JSON Lines string
+jsonl_data = cl.export_logs(fmt="jsonl", since="1d", skill="my-skill")
+```
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -2162,4 +2275,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 5.6 complete** — Eval System Integration — Harness eval-suite binding (`--eval-suite`), CI mode with JUnit XML (`--ci --junit-xml`), and historical pass-rate trend (`harnesskit eval trend`). 21 new pytest tests (all passing, 1040 total).
+Current status: **Phase 6.1 complete** — 调用日志系统 — Full call log observability with `cost` field in every record, `--since` time-window filtering on `tail`/`search`, and a new `logs export` command (CSV + JSON Lines). 36 new pytest tests (all passing, 1076 total).
