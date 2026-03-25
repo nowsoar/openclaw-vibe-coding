@@ -235,6 +235,7 @@ def run_eval(
     suite_name: str,
     invoke_fn: Callable[[dict[str, Any]], tuple[str, int, int, float]],
     base: Path | None = None,
+    extra_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run a test suite against a skill or harness.
 
@@ -249,6 +250,8 @@ def run_eval(
         Responsible for calling the LLM/skill/harness and returning its raw output.
     base:
         Optional path override for the ``.harness/`` directory root.
+    extra_fields:
+        Optional dict of additional fields to merge into the report (e.g. ``{"model": "gpt-4o"}``).
 
     Returns
     -------
@@ -337,6 +340,11 @@ def run_eval(
     # Build filesystem-safe timestamp string
     ts_safe = re.sub(r"[:\+\.]", "-", timestamp)[:23]
     result_file = rdir / f"{ts_safe}.json"
+
+    # Merge extra fields (e.g. model name for benchmark runs)
+    if extra_fields:
+        report.update(extra_fields)
+
     with result_file.open("w", encoding="utf-8") as fh:
         json.dump(report, fh, ensure_ascii=False, indent=2)
 
@@ -429,4 +437,57 @@ def compare_evals(report_a: dict[str, Any], report_b: dict[str, Any]) -> dict[st
         "case_diffs": case_diffs,
         "changed_cases": [d for d in case_diffs if d["changed"]],
         "verdict": verdict,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Multi-model Benchmark (Phase 5.5)
+# ---------------------------------------------------------------------------
+
+
+def benchmark_evals(reports: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate multiple per-model eval reports into a benchmark summary.
+
+    Parameters
+    ----------
+    reports:
+        List of reports, each produced by :func:`run_eval` with a ``"model"``
+        field (injected via ``extra_fields``).
+
+    Returns
+    -------
+    dict with keys:
+        suite, skill, entries (list of {model, target, metrics}), best_model
+    """
+    entries: list[dict[str, Any]] = []
+    for report in reports:
+        m = _report_metrics(report)
+        entries.append(
+            {
+                "model": report.get("model", report.get("target", "?")),
+                "target": report.get("target", "?"),
+                "metrics": m,
+            }
+        )
+
+    # Best model: highest pass_rate → tie on lowest avg_tokens → lowest avg_duration
+    best_idx = 0
+    for i in range(1, len(entries)):
+        curr = entries[best_idx]["metrics"]
+        cand = entries[i]["metrics"]
+        if cand["pass_rate"] > curr["pass_rate"]:
+            best_idx = i
+        elif cand["pass_rate"] == curr["pass_rate"]:
+            if cand["avg_tokens"] < curr["avg_tokens"]:
+                best_idx = i
+            elif cand["avg_tokens"] == curr["avg_tokens"] and cand["avg_duration"] < curr["avg_duration"]:
+                best_idx = i
+
+    best_model = entries[best_idx]["model"] if entries else ""
+
+    return {
+        "suite": reports[0].get("suite", "") if reports else "",
+        "skill": reports[0].get("skill", "") if reports else "",
+        "entries": entries,
+        "best_model": best_model,
     }

@@ -856,7 +856,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 5.5：多模型 Benchmark
+### Phase 5.5：多模型 Benchmark ✅
 **任务**：
 1. 实现 `harnesskit eval benchmark <skill> --suite suite-name --models "gpt-4o,claude-3-5,deepseek-v3"`
    - 同一个 Skill 用不同模型跑
@@ -868,8 +868,8 @@ Blueprint（工作流编排）
    - 雷达图（Phase 6 再实现）
 
 **验收标准**：
-- 支持多个模型对比
-- 报告有参考价值
+- ✅ 支持多个模型对比
+- ✅ 报告有参考价值
 
 ---
 

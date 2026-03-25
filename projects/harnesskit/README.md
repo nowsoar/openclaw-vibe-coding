@@ -1940,6 +1940,80 @@ print(cmp["changed_cases"])    # list of cases where status differed
 
 ---
 
+## Phase 5.5 — Multi-model Benchmark
+
+`harnesskit eval benchmark` runs the **same skill** against multiple LLM models on the same test suite in one command, then produces a side-by-side comparison so you can choose the best model for your use case.
+
+### Usage
+
+```bash
+# Benchmark a skill across three models
+harnesskit eval benchmark code-reviewer \
+  --suite code-review-suite \
+  --models "gpt-4o,claude-3-5-sonnet,deepseek-v3"
+
+# Pin to a specific skill version
+harnesskit eval benchmark code-reviewer@v0.2.0 \
+  --suite code-review-suite \
+  --models "gpt-4o,gpt-4o-mini"
+
+# CI mode: exit 1 if any model has failures
+harnesskit eval benchmark code-reviewer \
+  --suite code-review-suite \
+  --models "gpt-4o,gpt-4o-mini" \
+  --ci
+```
+
+### Output
+
+**Benchmark table** — one row per model showing pass rate, token usage, and duration. The recommended model is marked with ★:
+
+```
+          Benchmark — code-reviewer@v0.2.0 × code-review-suite
+┌──────────────────────┬───────────┬────────┬────────┬────────────┬─────────────┬──────────────┐
+│ Model                │ Pass Rate │ Passed │ Failed │ Avg Tokens │ Total Tokens│ Avg Duration │
+├──────────────────────┼───────────┼────────┼────────┼────────────┼─────────────┼──────────────┤
+│ gpt-4o ★             │ 100.0%    │      5 │      0 │      180.0 │         900 │       1.200s │
+│ gpt-4o-mini          │  80.0%    │      4 │      1 │       95.0 │         475 │       0.800s │
+│ deepseek-v3          │  80.0%    │      4 │      1 │      210.0 │        1050 │       2.100s │
+└──────────────────────┴───────────┴────────┴────────┴────────────┴─────────────┴──────────────┘
+```
+
+**Per-case results** — grid showing ✓/✗ for each case × model combination.
+
+A **Best Model** recommendation line names the winner (highest pass rate; tie-break: fewest tokens, then fastest).
+
+### Selection logic
+
+| Criterion | Direction |
+|---|---|
+| Pass rate | Higher is better |
+| Avg tokens | Lower is better (tie-break) |
+| Avg duration | Lower is better (tie-break) |
+
+### `benchmark_evals` Python API
+
+```python
+from harness_kit.eval import run_eval, benchmark_evals
+
+reports = []
+for model in ["gpt-4o", "gpt-4o-mini", "deepseek-v3"]:
+    report = run_eval(
+        target=f"my-skill@v0.1.0 [{model}]",
+        suite_name="my-suite",
+        invoke_fn=make_invoke_fn(model),   # your factory
+        extra_fields={"model": model, "skill": "my-skill@v0.1.0"},
+    )
+    reports.append(report)
+
+bench = benchmark_evals(reports)
+print(bench["best_model"])   # e.g. "gpt-4o"
+for entry in bench["entries"]:
+    print(entry["model"], entry["metrics"]["pass_rate"])
+```
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -1975,4 +2049,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 5.4 complete** — Eval Engine: A/B Comparison — `harnesskit eval compare --a <skill@v1> --b <skill@v2> --suite <suite>` runs both targets on the same test suite, shows a metrics comparison table (pass rate, tokens, duration) with colour-coded deltas, lists changed cases, and recommends the better version. `compare_evals` Python API also available. 21 new pytest tests (all passing, 1000 total).
+Current status: **Phase 5.5 complete** — Eval Engine: Multi-model Benchmark — `harnesskit eval benchmark <skill> --suite <suite> --models "gpt-4o,claude-3-5,deepseek-v3"` runs the same skill across multiple LLM models, shows a per-model benchmark table (pass rate, tokens, duration) with ★ winner, per-case result grid, and best-model recommendation. `benchmark_evals` Python API also available. 19 new pytest tests (all passing, 1019 total).

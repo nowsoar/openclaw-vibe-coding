@@ -3653,5 +3653,194 @@ def eval_compare(
         raise typer.Exit(1)
 
 
+@eval_app.command("benchmark")
+def eval_benchmark(
+    target: str = typer.Argument(
+        ...,
+        help="Skill to benchmark, e.g. 'my-skill' or 'my-skill@v0.1.0'.",
+    ),
+    suite: str = typer.Option(
+        ..., "--suite", "-s",
+        help="Test suite name.",
+    ),
+    models: str = typer.Option(
+        ..., "--models",
+        help="Comma-separated list of models, e.g. 'gpt-4o,claude-3-5,deepseek-v3'.",
+    ),
+    ci: bool = typer.Option(
+        False, "--ci",
+        help="CI mode: exit 1 when any model has failures.",
+    ),
+) -> None:
+    """Benchmark a skill across multiple LLM models on the same test suite."""
+    _require_init()
+
+    # Validate suite
+    try:
+        suite_data = _eval_mod.load_suite(suite)
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    # Resolve skill
+    skill_name, skill_version = _parse_name_version(target)
+    try:
+        skill_data = _skill_mod.load_skill(skill_name, skill_version)
+        actual_version = skill_data.get("version", "?")
+        skill_label = f"{skill_name}@{actual_version}"
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        rendered = _skill_mod.render_skill_prompt(skill_name, skill_version)
+    except Exception as e:
+        console.print(f"[red]✗ Failed to render skill: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Parse model list
+    model_list = [m.strip() for m in models.split(",") if m.strip()]
+    if not model_list:
+        console.print("[red]✗ --models must contain at least one model.[/red]")
+        raise typer.Exit(1)
+
+    # Read base config (for api_key, base_url)
+    cfg = read_config()
+
+    # Check API key from first model config
+    base_llm = LLMConfig.from_harness_config(cfg, overrides={"model": model_list[0]})
+    if not base_llm.api_key:
+        console.print(
+            "[red]✗ No API key found.[/red] "
+            "Set [bold]OPENAI_API_KEY[/bold] or configure [cyan].harness/config.yaml[/cyan]."
+        )
+        raise typer.Exit(1)
+
+    total_cases = len(suite_data.get("cases") or [])
+    console.print(
+        f"\n[bold cyan]Benchmark:[/bold cyan] [bold]{skill_label}[/bold]  "
+        f"suite=[bold]{suite}[/bold]  models={len(model_list)}  cases={total_cases}\n"
+    )
+
+    reports: list[dict] = []
+
+    for model_name in model_list:
+        llm_config = LLMConfig.from_harness_config(cfg, overrides={"model": model_name})
+
+        def _make_invoke(sd: dict, rend: dict, lc: LLMConfig):  # noqa: ANN001
+            def _invoke(inputs: dict) -> tuple[str, int, int, float]:
+                vars_dict: dict[str, str] = {k: str(v) for k, v in inputs.items()}
+                for inp in sd.get("inputs") or []:
+                    iname = inp.get("name")
+                    if iname and iname not in vars_dict and inp.get("default") is not None:
+                        vars_dict[iname] = str(inp["default"])
+                msgs = build_messages(sd, rend, vars_dict)
+                resp = call_llm(msgs, lc, stream=False)
+                return resp.content, resp.input_tokens, resp.output_tokens, resp.duration
+            return _invoke
+
+        invoke_fn = _make_invoke(skill_data, rendered, llm_config)
+        target_label = f"{skill_label} [{model_name}]"
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task(f"Running [bold]{model_name}[/bold]…", total=total_cases)
+            try:
+                report = _eval_mod.run_eval(
+                    target=target_label,
+                    suite_name=suite,
+                    invoke_fn=invoke_fn,
+                    extra_fields={"model": model_name, "skill": skill_label},
+                )
+            except Exception as e:
+                console.print(f"[red]✗ {model_name}: {e}[/red]")
+                raise typer.Exit(1)
+            progress.update(task, completed=total_cases)
+
+        reports.append(report)
+
+    # Produce benchmark summary
+    benchmark = _eval_mod.benchmark_evals(reports)
+    entries = benchmark["entries"]
+
+    # ── Per-model results table ────────────────────────────────────────────
+    tbl = Table(title=f"Benchmark — {skill_label} × {suite}", show_lines=True)
+    tbl.add_column("Model", style="bold cyan")
+    tbl.add_column("Pass Rate", justify="center")
+    tbl.add_column("Passed", justify="right")
+    tbl.add_column("Failed", justify="right")
+    tbl.add_column("Avg Tokens", justify="right")
+    tbl.add_column("Total Tokens", justify="right")
+    tbl.add_column("Avg Duration", justify="right")
+
+    best_model = benchmark["best_model"]
+
+    for entry in entries:
+        m = entry["metrics"]
+        model_name = entry["model"]
+        is_best = model_name == best_model
+        pct = f"{m['pass_rate'] * 100:.1f}%"
+        pr_color = "green" if m["failed"] == 0 else "red"
+        model_cell = f"[bold green]{model_name} ★[/bold green]" if is_best else model_name
+        tbl.add_row(
+            model_cell,
+            f"[{pr_color}]{pct}[/{pr_color}]",
+            f"[green]{m['passed']}[/green]",
+            f"[red]{m['failed']}[/red]" if m["failed"] > 0 else "0",
+            f"{m['avg_tokens']:.1f}",
+            str(m["total_tokens"]),
+            f"{m['avg_duration']:.3f}s",
+        )
+
+    console.print(tbl)
+
+    # ── Per-case breakdown per model ──────────────────────────────────────
+    all_case_ids = [c["id"] for c in (suite_data.get("cases") or [])]
+    if all_case_ids:
+        ctbl = Table(title="Per-Case Results", show_lines=False)
+        ctbl.add_column("Case ID", style="cyan")
+        for entry in entries:
+            ctbl.add_column(entry["model"], justify="center")
+
+        # Build a lookup: model → {case_id → status}
+        model_case_status: dict[str, dict[str, str]] = {}
+        for report, entry in zip(reports, entries):
+            model_case_status[entry["model"]] = {
+                c["id"]: c["status"] for c in (report.get("cases") or [])
+            }
+
+        for cid in all_case_ids:
+            cells: list[str] = [cid]
+            for entry in entries:
+                status = model_case_status.get(entry["model"], {}).get(cid, "?")
+                if status == "passed":
+                    cells.append("[green]✓[/green]")
+                elif status == "failed":
+                    cells.append("[red]✗[/red]")
+                elif status == "error":
+                    cells.append("[yellow]![/yellow]")
+                else:
+                    cells.append("[dim]?[/dim]")
+            ctbl.add_row(*cells)
+
+        console.print(ctbl)
+
+    # ── Recommendation ────────────────────────────────────────────────────
+    console.print(
+        f"\n[bold]Best Model:[/bold] [bold green]{best_model}[/bold green] "
+        f"(highest pass rate; tie-break: fewest tokens, then fastest)"
+    )
+
+    if ci:
+        any_failures = any(e["metrics"]["failed"] > 0 for e in entries)
+        if any_failures:
+            raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     main()
