@@ -2240,6 +2240,76 @@ jsonl_data = cl.export_logs(fmt="jsonl", since="1d", skill="my-skill")
 
 ---
 
+## Phase 6.2 — 成本追踪 (Cost Tracking)
+
+Phase 6.2 adds per-call cost estimation, aggregated cost reports, per-model pricing configuration, and cost alert thresholds.
+
+Every `skill run` and `harness run` call now automatically calculates and logs the USD cost using built-in pricing tables for all major models.
+
+### Built-in model pricing
+
+Prices are pre-configured for the most common models (USD per 1K tokens):
+
+| Model | Input | Output |
+|---|---|---|
+| gpt-4o | $0.0025 | $0.0100 |
+| gpt-4o-mini | $0.00015 | $0.0006 |
+| claude-3-5-sonnet | $0.003 | $0.015 |
+| claude-3-opus | $0.015 | $0.075 |
+| deepseek-v3 | $0.00027 | $0.0011 |
+
+### `harnesskit cost report`
+
+```bash
+harnesskit cost report                      # 30-day report, grouped by skill
+harnesskit cost report --since 7d           # last 7 days
+harnesskit cost report --group-by model     # grouped by model
+harnesskit cost report --group-by day       # daily breakdown
+```
+
+Output includes: total spend, call count, token count, avg per call, most expensive call.
+
+### `harnesskit cost breakdown`
+
+```bash
+harnesskit cost breakdown                   # top 20 most expensive calls (7d)
+harnesskit cost breakdown --since 30d       # last 30 days
+harnesskit cost breakdown --skill my-skill  # filter by skill
+harnesskit cost breakdown --limit 10        # show top 10
+```
+
+### `harnesskit cost set-price`
+
+Override the price for any model:
+
+```bash
+harnesskit cost set-price my-model --input 0.001 --output 0.002
+harnesskit cost list-prices                 # show all prices
+```
+
+Prices are saved to `.harness/config.yaml` under `model_pricing`.
+
+### Cost alerts via config
+
+Add alert thresholds to `.harness/config.yaml`:
+
+```yaml
+cost_alert:
+  per_call: 0.05    # warn if a single call exceeds $0.05
+  per_day: 1.00     # warn if daily total exceeds $1.00
+```
+
+### Log record — cost field
+
+Every call log record includes the computed cost:
+
+```json
+{"timestamp": "...", "skill": "code-reviewer", "model": "gpt-4o",
+ "input_tokens": 500, "output_tokens": 200, "cost": 0.003250, "duration": 1.8}
+```
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -2275,4 +2345,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 6.1 complete** — 调用日志系统 — Full call log observability with `cost` field in every record, `--since` time-window filtering on `tail`/`search`, and a new `logs export` command (CSV + JSON Lines). 36 new pytest tests (all passing, 1076 total).
+Current status: **Phase 6.2 complete** — 成本追踪 — Automatic per-call cost estimation, `harnesskit cost report` (grouped by skill/model/day), `harnesskit cost breakdown`, `harnesskit cost set-price`, and config-driven alert thresholds. 34 new pytest tests (all passing, 1110 total).

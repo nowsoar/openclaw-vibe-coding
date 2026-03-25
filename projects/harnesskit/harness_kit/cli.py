@@ -32,6 +32,7 @@ from harness_kit import memory as _memory_mod
 from harness_kit import agent as _agent_mod
 from harness_kit import blueprint as _blueprint_mod
 from harness_kit import eval as _eval_mod
+from harness_kit import cost_tracker as _cost_tracker_mod
 from harness_kit.llm import LLMConfig, build_messages, call_llm
 
 app = typer.Typer(
@@ -118,6 +119,13 @@ app.add_typer(blueprint_app, name="blueprint")
 
 eval_app = typer.Typer(help="Eval engine — manage test suites.", no_args_is_help=True)
 app.add_typer(eval_app, name="eval")
+
+# ---------------------------------------------------------------------------
+# cost sub-app
+# ---------------------------------------------------------------------------
+
+cost_app = typer.Typer(help="Track and report LLM call costs.", no_args_is_help=True)
+app.add_typer(cost_app, name="cost")
 
 
 def _require_init() -> None:
@@ -1377,6 +1385,7 @@ def skill_run(
             input_tokens=0,
             output_tokens=0,
             duration=0.0,
+            cost=0.0,
             status="error",
             error=call_error,
             inputs=vars_dict,
@@ -1419,6 +1428,7 @@ def skill_run(
             input_tokens=llm_resp_input_tokens,
             output_tokens=llm_resp_output_tokens,
             duration=llm_resp_duration,
+            cost=_cost_tracker_mod.estimate_cost(llm_resp_model, llm_resp_input_tokens, llm_resp_output_tokens),
             status=call_status,
             inputs=vars_dict,
             output=output_content,
@@ -1436,6 +1446,7 @@ def skill_run(
         input_tokens=llm_resp_input_tokens,
         output_tokens=llm_resp_output_tokens,
         duration=llm_resp_duration,
+        cost=_cost_tracker_mod.estimate_cost(llm_resp_model, llm_resp_input_tokens, llm_resp_output_tokens),
         status=call_status,
         inputs=vars_dict,
         output=output_content,
@@ -2188,6 +2199,7 @@ def harness_run(
             input_tokens=0,
             output_tokens=0,
             duration=0.0,
+            cost=0.0,
             status="error",
             error=call_error,
             inputs=vars_dict,
@@ -2233,6 +2245,7 @@ def harness_run(
             input_tokens=llm_resp_input_tokens,
             output_tokens=llm_resp_output_tokens,
             duration=llm_resp_duration,
+            cost=_cost_tracker_mod.estimate_cost(llm_resp_model, llm_resp_input_tokens, llm_resp_output_tokens),
             status=call_status,
             inputs=vars_dict,
             output=output_content,
@@ -2249,6 +2262,7 @@ def harness_run(
         input_tokens=llm_resp_input_tokens,
         output_tokens=llm_resp_output_tokens,
         duration=llm_resp_duration,
+        cost=_cost_tracker_mod.estimate_cost(llm_resp_model, llm_resp_input_tokens, llm_resp_output_tokens),
         status=call_status,
         inputs=vars_dict,
         output=output_content,
@@ -2265,6 +2279,158 @@ def harness_run(
 @app.callback()
 def _main() -> None:
     """HarnessKit — manage AI Agent runtimes like code."""
+
+
+# ---------------------------------------------------------------------------
+# cost commands
+# ---------------------------------------------------------------------------
+
+
+@cost_app.command("report")
+def cost_report_cmd(
+    since: str = typer.Option("30d", "--since", "-s", help="Time window: 1d, 7d, 30d, etc."),
+    group_by: str = typer.Option("skill", "--group-by", "-g", help="Group by: skill, model, or day."),
+) -> None:
+    """Show cost report grouped by skill, model, or day."""
+    _require_init()
+    report = _cost_tracker_mod.cost_report(since=since)
+    total = report["total_cost"]
+    calls = report["total_calls"]
+    tokens = report["total_tokens"]
+
+    console.print(f"\n[bold cyan]── Cost Report (last {since}) ──[/bold cyan]")
+    console.print(
+        f"Total: [bold green]${total:.4f}[/bold green]  "
+        f"Calls: [bold]{calls}[/bold]  "
+        f"Tokens: [bold]{tokens:,}[/bold]"
+    )
+    if calls > 0:
+        console.print(f"Avg per call: [bold]${total/calls:.6f}[/bold]\n")
+
+    if group_by == "model":
+        data = report["by_model"]
+        title = "Cost by Model"
+    elif group_by == "day":
+        # Convert daily_breakdown into the same format
+        data = {
+            date: {"cost": c, "calls": 0, "tokens": 0}
+            for date, c in report["daily_breakdown"].items()
+        }
+        title = "Cost by Day"
+    else:
+        data = report["by_skill"]
+        title = "Cost by Skill"
+
+    if not data:
+        console.print("[dim]No data found for the selected period.[/dim]")
+        return
+
+    table = Table(title=title, show_lines=False)
+    table.add_column("Name", style="cyan")
+    table.add_column("Cost (USD)", justify="right", style="green")
+    if group_by != "day":
+        table.add_column("Calls", justify="right")
+        table.add_column("Tokens", justify="right")
+        table.add_column("Avg/Call", justify="right")
+
+    sorted_items = sorted(data.items(), key=lambda x: x[1].get("cost", 0.0), reverse=True)
+    for name, stats in sorted_items:
+        c = stats.get("cost", 0.0)
+        n = stats.get("calls", 0)
+        t = stats.get("tokens", 0)
+        avg = f"${c/n:.6f}" if n > 0 else "-"
+        if group_by == "day":
+            table.add_row(name, f"${c:.4f}")
+        else:
+            table.add_row(name, f"${c:.4f}", str(n), f"{t:,}", avg)
+
+    console.print(table)
+
+    # Most expensive call
+    top = report.get("most_expensive_call")
+    if top and top.get("cost"):
+        console.print(
+            f"\n[bold]Most expensive call:[/bold] "
+            f"[cyan]{top['skill']}[/cyan] via [blue]{top['model']}[/blue]  "
+            f"[bold green]${top['cost']:.4f}[/bold green]  "
+            f"[dim]{top['timestamp'][:19].replace('T', ' ')}[/dim]"
+        )
+
+
+@cost_app.command("breakdown")
+def cost_breakdown_cmd(
+    since: str = typer.Option("7d", "--since", "-s", help="Time window: 1d, 7d, 30d, etc."),
+    skill: Optional[str] = typer.Option(None, "--skill", help="Filter by skill name."),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max number of calls to show."),
+) -> None:
+    """Show per-call cost breakdown (most expensive first)."""
+    _require_init()
+    from harness_kit.call_logger import search_logs
+    records = search_logs(skill=skill, since=since, limit=10_000)
+    if not records:
+        console.print("[dim]No call logs found.[/dim]")
+        return
+
+    # Enrich with estimated cost if missing
+    enriched = []
+    for rec in records:
+        cost_val = rec.get("cost")
+        if cost_val is None:
+            cost_val = _cost_tracker_mod.estimate_cost(
+                rec.get("model", ""), rec.get("input_tokens", 0), rec.get("output_tokens", 0)
+            ) or 0.0
+        enriched.append((cost_val, rec))
+
+    enriched.sort(key=lambda x: x[0], reverse=True)
+    top_n = enriched[:limit]
+
+    table = Table(title=f"Top {limit} Most Expensive Calls (last {since})", show_lines=False)
+    table.add_column("Timestamp", style="dim", no_wrap=True)
+    table.add_column("Skill", style="cyan")
+    table.add_column("Model", style="blue")
+    table.add_column("Cost (USD)", justify="right", style="green")
+    table.add_column("Tokens ↑/↓", justify="right")
+    table.add_column("Duration", justify="right")
+
+    for cost_val, rec in top_n:
+        ts = rec.get("timestamp", "")[:19].replace("T", " ")
+        tokens = f"{rec.get('input_tokens', 0)} / {rec.get('output_tokens', 0)}"
+        dur = f"{rec.get('duration', 0):.2f}s"
+        table.add_row(ts, rec.get("skill", "?"), rec.get("model", "?"),
+                      f"${cost_val:.4f}", tokens, dur)
+
+    console.print(table)
+    total_shown = sum(c for c, _ in top_n)
+    console.print(f"\n[dim]Total shown: ${total_shown:.4f}[/dim]")
+
+
+@cost_app.command("set-price")
+def cost_set_price_cmd(
+    model: str = typer.Argument(..., help="Model name (e.g. gpt-4o)."),
+    input_price: float = typer.Option(..., "--input", help="Input price per 1K tokens (USD)."),
+    output_price: float = typer.Option(..., "--output", help="Output price per 1K tokens (USD)."),
+) -> None:
+    """Set custom token pricing for a model in config."""
+    _require_init()
+    _cost_tracker_mod.set_model_price(model, input_price, output_price)
+    console.print(
+        f"[green]✓[/green] Price set for [cyan]{model}[/cyan]: "
+        f"input=${input_price}/1K  output=${output_price}/1K"
+    )
+
+
+@cost_app.command("list-prices")
+def cost_list_prices_cmd() -> None:
+    """Show all model prices (built-in + user overrides)."""
+    _require_init()
+    prices = _cost_tracker_mod.get_model_prices()
+    table = Table(title="Model Pricing (USD per 1K tokens)", show_lines=False)
+    table.add_column("Model", style="cyan")
+    table.add_column("Input $/1K", justify="right")
+    table.add_column("Output $/1K", justify="right")
+    for model, p in sorted(prices.items()):
+        table.add_row(model, f"${p['input']:.5f}", f"${p['output']:.5f}")
+    console.print(table)
 
 
 # ---------------------------------------------------------------------------
