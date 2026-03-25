@@ -2925,8 +2925,63 @@ Phase 7.4 ships with **30 pytest tests** in `tests/test_tui_eval_browser.py`:
 
 ---
 
+## Phase 7.5 — 实时日志流 (Real-time Log Stream)
+
+Phase 7.5 adds a live **Log Browser** screen inside the TUI — a `tail -f`-style real-time view of all LLM call logs with filtering, search highlight, and pause/resume support.
+
+```bash
+harnesskit tui          # launch TUI
+# → navigate to 📜  Logs → press Enter
+```
+
+### Features
+
+| Feature | Description |
+|---|---|
+| Real-time tail | Panel auto-refreshes every 2 s, showing the most recent 200 calls |
+| Skill filter | Partial, case-insensitive match against the Skill name |
+| Time window filter | Human-readable durations: `1d`, `2h`, `30m`, `60s` |
+| Search highlight | Keyword search tints matching rows with a dark-blue background |
+| Pause / Resume | Freeze the view with `Space`, resume with `Space` again |
+| Manual refresh | Force an immediate reload with `r` regardless of pause state |
+| Colour coding | `✓` success rows in green, `✗` error rows in red |
+
+### Log panel columns
+
+```
+时间                  Skill                Model             状态   耗时    Tokens   费用
+2026-03-25 10:00:00  code-reviewer        gpt-4o            ✓     2.50s    300tok  $0.0150
+2026-03-25 10:01:00  translate-skill      claude-3-5-sonnet ✗     0.80s     50tok  $0.0030
+```
+
+### Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| `Space` | Pause / resume live refresh |
+| `r` | Force immediate refresh |
+| `j / ↓` | Scroll log panel down |
+| `k / ↑` | Scroll log panel up |
+| `Esc` | Return to main TUI navigation |
+
+> **Filter inputs** (Skill, Since, Search) are accessible via mouse click or Tab navigation.  `Space` and `r` use priority bindings so they work from any focus state.
+
+### Tests
+
+Phase 7.5 ships with **35 pytest tests** in `tests/test_tui_logs_browser.py`:
+
+| Test Category | Count | Coverage |
+|---|---|---|
+| Pure helper functions | 16 | `_escape_markup`, `_format_timestamp`, `_format_status` (success/error/unknown), `_format_record` (basic, no cost, search highlight, case-insensitive), `_format_log_panel` (empty, records, paused indicator, search highlight) |
+| Module import & structure | 2 | package import, tui re-export |
+| Instantiation & bindings | 6 | basic, base_path injection, escape/space/j/k/r bindings, initial pause state |
+| Textual pilot (async) | 9 | compose, empty state, record display, record count, pause toggle, pause indicator, r refresh, escape nav, success green / error red / multiple records |
+| Main app integration | 2 | Enter on Logs nav → LogsBrowserScreen pushed |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 7.4 complete** — Eval 结果可视化 — interactive Eval Result Browser with suite list, per-case green/red pass/fail colouring, and detailed assertion inspection; 30 new tests all passing.
+Current status: **Phase 7.5 complete** — 实时日志流 — real-time log stream browser with Skill/time/search filtering, pause/resume, colour-coded success/error rows, and auto-refresh every 2 s; 35 new tests all passing.

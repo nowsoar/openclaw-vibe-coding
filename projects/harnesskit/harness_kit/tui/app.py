@@ -9,6 +9,7 @@ from textual.reactive import reactive
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
 from harness_kit.tui.eval_browser import EvalBrowserScreen
+from harness_kit.tui.logs_browser import LogsBrowserScreen
 from harness_kit.tui.prompt_diff import PromptDiffScreen
 from harness_kit.tui.skill_browser import SkillBrowserScreen
 
@@ -191,7 +192,7 @@ class HelpOverlay(Container):
             yield Label("")
             yield Label("[cyan]j / ↓[/cyan]    向下移动")
             yield Label("[cyan]k / ↑[/cyan]    向上移动")
-            yield Label("[cyan]Enter[/cyan]    进入 / 选择  （Skills → Skill 浏览器 | Prompts → Prompt Diff | Eval → Eval 结果浏览器）")
+            yield Label("[cyan]Enter[/cyan]    进入 / 选择  （Skills → Skill 浏览器 | Prompts → Prompt Diff | Eval → Eval 结果浏览器 | Logs → 实时日志流）")
             yield Label("[cyan]Esc[/cyan]      返回上一屏")
             yield Label("[cyan]?[/cyan]        显示 / 关闭帮助")
             yield Label("[cyan]q[/cyan]        退出 HarnessKit TUI")
@@ -208,6 +209,12 @@ class HelpOverlay(Container):
             yield Label("[bold]Eval 结果浏览器快捷键[/bold]")
             yield Label("[cyan]Tab[/cyan]      切换 Suites / Cases 面板")
             yield Label("[cyan]j / k[/cyan]    在当前面板上下移动")
+            yield Label("[cyan]Esc[/cyan]      返回主菜单")
+            yield Label("")
+            yield Label("[bold]实时日志流快捷键[/bold]")
+            yield Label("[cyan]Space[/cyan]    暂停 / 继续实时刷新")
+            yield Label("[cyan]r[/cyan]        立即刷新日志")
+            yield Label("[cyan]j / k[/cyan]    滚动日志面板")
             yield Label("[cyan]Esc[/cyan]      返回主菜单")
             yield Label("")
             yield Label("[dim]按任意键关闭[/dim]")
@@ -326,6 +333,9 @@ class HarnessKitApp(App):
             if item_id == "eval":
                 self.push_screen(EvalBrowserScreen())
                 return
+            if item_id == "logs":
+                self.push_screen(LogsBrowserScreen())
+                return
         self._update_content(idx)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -344,6 +354,8 @@ class HarnessKitApp(App):
                 self.push_screen(PromptDiffScreen())
             elif item_id == "eval":
                 self.push_screen(EvalBrowserScreen())
+            elif item_id == "logs":
+                self.push_screen(LogsBrowserScreen())
 
     def action_toggle_help(self) -> None:
         self._help_visible = not self._help_visible

@@ -1066,7 +1066,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 7.5：实时日志流
+### Phase 7.5：实时日志流 ✅
 **任务**：
 1. 类似 `tail -f` 的实时日志显示
 2. 支持过滤（按 Skill、按时间）
@@ -1074,8 +1074,10 @@ Blueprint（工作流编排）
 4. 支持搜索高亮
 
 **验收标准**：
-- 实时性良好
-- 过滤和搜索有效
+- ✅ 实时性良好（2 s 自动刷新，`_auto_refresh` + `set_interval`）
+- ✅ 过滤和搜索有效（Skill 模糊过滤、时间窗口、关键词行高亮）
+- ✅ 暂停/继续（Space 键 + priority=True，`action_toggle_pause`）
+- ✅ 35 个 pytest 测试全部通过（helpers + 结构 + pilot + 集成）
 
 ---
 

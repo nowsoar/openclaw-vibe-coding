@@ -2,7 +2,14 @@
 
 from harness_kit.tui.app import HarnessKitApp
 from harness_kit.tui.eval_browser import EvalBrowserScreen
+from harness_kit.tui.logs_browser import LogsBrowserScreen
 from harness_kit.tui.prompt_diff import PromptDiffScreen
 from harness_kit.tui.skill_browser import SkillBrowserScreen
 
-__all__ = ["HarnessKitApp", "EvalBrowserScreen", "PromptDiffScreen", "SkillBrowserScreen"]
+__all__ = [
+    "HarnessKitApp",
+    "EvalBrowserScreen",
+    "LogsBrowserScreen",
+    "PromptDiffScreen",
+    "SkillBrowserScreen",
+]
