@@ -34,6 +34,7 @@ from harness_kit import blueprint as _blueprint_mod
 from harness_kit import eval as _eval_mod
 from harness_kit import cost_tracker as _cost_tracker_mod
 from harness_kit import stats as _stats_mod
+from harness_kit import improvement as _improve_mod
 from harness_kit.llm import LLMConfig, build_messages, call_llm
 
 app = typer.Typer(
@@ -134,6 +135,13 @@ app.add_typer(cost_app, name="cost")
 
 stats_app = typer.Typer(help="Statistics dashboard for skills and harnesses.", no_args_is_help=True)
 app.add_typer(stats_app, name="stats")
+
+# ---------------------------------------------------------------------------
+# improve sub-app
+# ---------------------------------------------------------------------------
+
+improve_app = typer.Typer(help="Improvement flywheel — log and track Harness/Skill improvements.", no_args_is_help=True)
+app.add_typer(improve_app, name="improve")
 
 
 def _require_init() -> None:
@@ -4271,6 +4279,152 @@ def stats_show_cmd(
         console.print()
     elif data["error_calls"] == 0:
         console.print("[dim]No errors recorded — [green]all calls succeeded[/green][/dim]\n")
+
+
+# ===========================================================================
+# improve commands
+# ===========================================================================
+
+
+@improve_app.command("log")
+def improve_log_cmd(
+    skill: str = typer.Argument(..., help="Skill name being improved."),
+    issue: str = typer.Option(..., "--issue", "-i", help="Description of the issue observed."),
+    root_cause: str = typer.Option(..., "--root-cause", "-r", help="Root cause of the issue."),
+    fix: str = typer.Option(..., "--fix", "-f", help="Fix applied to address the issue."),
+    before: str = typer.Option(..., "--before", "-B", help="Skill version before the fix (e.g. v0.1.0)."),
+    after: str = typer.Option(..., "--after", "-A", help="Skill version after the fix (e.g. v0.1.1)."),
+    eval_delta: str = typer.Option("", "--eval", "-e", help="Eval improvement string (e.g. '+12%' or 'pass rate 80→92')."),
+) -> None:
+    """Record an improvement to a skill (issue → root-cause → fix → versions)."""
+    _require_init()
+    record = _improve_mod.log_improvement(
+        skill=skill,
+        issue=issue,
+        root_cause=root_cause,
+        fix=fix,
+        before_version=before,
+        after_version=after,
+        eval_improvement=eval_delta,
+    )
+    console.print(f"[green]✓ Improvement logged[/green] for skill [bold]{skill}[/bold]")
+    t = Table(show_header=False, box=None, padding=(0, 1))
+    t.add_column("Field", style="dim", width=14)
+    t.add_column("Value")
+    t.add_row("Timestamp", record["timestamp"])
+    t.add_row("Skill", record["skill"])
+    t.add_row("Issue", record["issue"])
+    t.add_row("Root Cause", record["root_cause"])
+    t.add_row("Fix", record["fix"])
+    t.add_row("Versions", f"{record['before_version']} → {record['after_version']}")
+    if record.get("eval_improvement"):
+        t.add_row("Eval Δ", f"[green]{record['eval_improvement']}[/green]")
+    console.print(t)
+
+
+@improve_app.command("history")
+def improve_history_cmd(
+    skill: str = typer.Argument(..., help="Skill name to view history for."),
+    since: Optional[str] = typer.Option(None, "--since", "-s", help="Time filter: 7d, week, month, etc."),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max records to display."),
+) -> None:
+    """Show improvement history for a skill."""
+    _require_init()
+    records = _improve_mod.get_history(skill=skill, since=since)
+    if not records:
+        msg = f"No improvement records for [bold]{skill}[/bold]"
+        if since:
+            msg += f" in the last {since}"
+        console.print(f"[dim]{msg}.[/dim]")
+        return
+
+    console.print(
+        f"\n[bold]Improvement History:[/bold] [cyan]{skill}[/cyan]"
+        + (f"  [dim](since {since})[/dim]" if since else "")
+    )
+    console.print(f"[dim]Found {len(records)} record(s)[/dim]\n")
+
+    shown = records[:limit]
+    for idx, rec in enumerate(shown, 1):
+        ts = rec.get("timestamp", "")[:19].replace("T", " ")
+        bv = rec.get("before_version", "?")
+        av = rec.get("after_version", "?")
+        gain = rec.get("eval_improvement", "")
+        gain_str = f"  [green]{gain}[/green]" if gain else ""
+        console.print(f"[bold]{idx:>2}.[/bold] [dim]{ts}[/dim]  {bv} → [cyan]{av}[/cyan]{gain_str}")
+        console.print(f"    [yellow]Issue:[/yellow]      {rec.get('issue', '')}")
+        console.print(f"    [yellow]Root cause:[/yellow] {rec.get('root_cause', '')}")
+        console.print(f"    [yellow]Fix:[/yellow]        {rec.get('fix', '')}")
+        console.print()
+
+    if len(records) > limit:
+        console.print(f"[dim]… {len(records) - limit} more record(s). Use --limit to see more.[/dim]")
+
+
+@improve_app.command("report")
+def improve_report_cmd(
+    period: str = typer.Option("week", "--period", "-p", help="Reporting period: day, week, month, or Nd/Nh."),
+) -> None:
+    """Generate an improvement report for a given period."""
+    _require_init()
+    data = _improve_mod.improvement_report(period=period)
+
+    console.print(
+        f"\n[bold]Improvement Report[/bold] — period: [cyan]{data['period']}[/cyan]"
+        f"  [dim](since {data['cutoff'][:19].replace('T', ' ')} UTC)[/dim]\n"
+    )
+
+    if data["total"] == 0:
+        console.print("[dim]No improvements recorded in this period.[/dim]")
+        return
+
+    # Summary
+    summary = Table(show_header=False, box=None, padding=(0, 2))
+    summary.add_column("", style="dim")
+    summary.add_column("", style="bold cyan")
+    summary.add_row("Total improvements", str(data["total"]))
+    summary.add_row("Skills improved", str(len(data["by_skill"])))
+    if data["eval_gains"]:
+        summary.add_row("Eval gains recorded", str(len(data["eval_gains"])))
+    console.print(summary)
+    console.print()
+
+    # Per-skill breakdown
+    if data["by_skill"]:
+        sk_table = Table(title="Improvements by Skill", show_lines=False)
+        sk_table.add_column("Skill", style="cyan")
+        sk_table.add_column("Count", justify="right")
+        sk_table.add_column("Bar", no_wrap=True)
+        max_count = max(data["by_skill"].values()) or 1
+        bar_width = 20
+        for sk, count in data["by_skill"].items():
+            filled = int((count / max_count) * bar_width)
+            bar = f"[green]{'█' * filled}[/green][dim]{'░' * (bar_width - filled)}[/dim]"
+            sk_table.add_row(sk, str(count), bar)
+        console.print(sk_table)
+        console.print()
+
+    # Eval gains list
+    if data["eval_gains"]:
+        console.print("[bold]Eval Improvements Recorded[/bold]")
+        for gain in data["eval_gains"]:
+            console.print(f"  [green]▲[/green] {gain}")
+        console.print()
+
+    # Recent records
+    recent = data["records"][:5]
+    if recent:
+        console.print("[bold]Recent Improvements[/bold]\n")
+        for rec in recent:
+            ts = rec.get("timestamp", "")[:19].replace("T", " ")
+            sk = rec.get("skill", "?")
+            bv = rec.get("before_version", "?")
+            av = rec.get("after_version", "?")
+            gain = rec.get("eval_improvement", "")
+            gain_str = f"  [green]{gain}[/green]" if gain else ""
+            console.print(f"  [dim]{ts}[/dim]  [cyan]{sk}[/cyan]  {bv} → [bold]{av}[/bold]{gain_str}")
+            console.print(f"    Fix: {rec.get('fix', '')}")
+        console.print()
 
 
 if __name__ == "__main__":

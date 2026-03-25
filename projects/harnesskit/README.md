@@ -2392,6 +2392,121 @@ No errors recorded — all calls succeeded
 
 ---
 
+## Phase 6.4 — 改进飞轮核心 (Improvement Flywheel)
+
+Phase 6.4 implements the **Improvement Flywheel**: a structured log that turns every Harness failure into a documented, trackable improvement step. Every fix is recorded with its context (issue, root cause, versions before/after, eval delta), making your iteration history auditable and actionable.
+
+### Storage
+
+Each skill's improvement journal lives at `.harness/improvements/{skill}.jsonl`. Each line is a JSON record:
+
+```json
+{
+  "timestamp": "2026-03-25T10:00:00+00:00",
+  "type": "improvement",
+  "skill": "code-reviewer",
+  "issue": "LLM hallucinated a function name",
+  "root_cause": "Missing no-hallucination rule",
+  "fix": "Added no-hallucination hard rule to skill",
+  "before_version": "v0.1.0",
+  "after_version": "v0.1.1",
+  "eval_improvement": "+12%"
+}
+```
+
+### `harnesskit improve log`
+
+Record an improvement interactively via CLI flags:
+
+```bash
+harnesskit improve log code-reviewer \
+  --issue "LLM hallucinated a function name" \
+  --root-cause "Missing no-hallucination rule" \
+  --fix "Added no-hallucination hard rule to skill" \
+  --before v0.1.0 \
+  --after v0.1.1 \
+  --eval "+12%"
+```
+
+Output:
+
+```
+✓ Improvement logged for skill code-reviewer
+  Timestamp    2026-03-25 10:00:00+00:00
+  Skill        code-reviewer
+  Issue        LLM hallucinated a function name
+  Root Cause   Missing no-hallucination rule
+  Fix          Added no-hallucination hard rule to skill
+  Versions     v0.1.0 → v0.1.1
+  Eval Δ       +12%
+```
+
+### `harnesskit improve history <skill>`
+
+View full improvement history for a skill (most-recent first):
+
+```bash
+harnesskit improve history code-reviewer          # all time
+harnesskit improve history code-reviewer --since 7d
+harnesskit improve history code-reviewer --limit 5
+```
+
+Output:
+
+```
+Improvement History: code-reviewer
+Found 3 record(s)
+
+ 1. 2026-03-25 10:00:00  v0.1.0 → v0.1.1  +12%
+    Issue:      LLM hallucinated a function name
+    Root cause: Missing no-hallucination rule
+    Fix:        Added no-hallucination hard rule to skill
+
+ 2. 2026-03-22 09:30:00  v0.0.2 → v0.1.0  +8%
+    Issue:      Output was not valid JSON
+    Root cause: Prompt did not enforce JSON output
+    Fix:        Added output-json soft rule
+```
+
+### `harnesskit improve report`
+
+Aggregate all improvements for a reporting period:
+
+```bash
+harnesskit improve report                   # default: week
+harnesskit improve report --period day
+harnesskit improve report --period month
+harnesskit improve report --period 14d
+```
+
+Output:
+
+```
+Improvement Report — period: week  (since 2026-03-18 10:00:00 UTC)
+
+  Total improvements   3
+  Skills improved      2
+  Eval gains recorded  2
+
+Improvements by Skill
+┏━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Skill          ┃ Count ┃ Bar                  ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━┩
+│ code-reviewer  │     2 │ ████████████████████ │
+│ summarizer     │     1 │ ██████████           │
+└────────────────┴───────┴──────────────────────┘
+
+Eval Improvements Recorded
+  ▲ +12%
+  ▲ +8%
+
+Recent Improvements
+  2026-03-25 10:00:00  code-reviewer  v0.1.0 → v0.1.1  +12%
+    Fix: Added no-hallucination hard rule to skill
+```
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -2427,4 +2542,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 6.3 complete** — 统计仪表盘 — `harnesskit stats show <skill/harness>` renders call count, success rate, duration stats, token distribution, error type distribution, and model usage as rich tables and ASCII bar charts. 32 new pytest tests (all passing, 1142 total).
+Current status: **Phase 6.4 complete** — 改进飞轮核心 — `harnesskit improve log/history/report` records structured improvement entries (issue → root-cause → fix → versions → eval delta) per skill, with time-filtered history and period-based aggregation reports. 29 new pytest tests (all passing, 1171 total).
