@@ -1209,7 +1209,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 8.8：Skills Registry
+### Phase 8.8：Skills Registry ✅
 **任务**：
 1. 本地 Registry 索引：`~/.harnesskit/registry.json`
    - 已安装的 Skills 列表
@@ -1230,8 +1230,8 @@ Blueprint（工作流编排）
    - 后期支持推送到中央 Registry
 
 **验收标准**：
-- 本地安装/导出流程可用
-- 打包格式正确，包含所有依赖
+- ✅ 本地安装/导出流程可用
+- ✅ 打包格式正确，包含所有依赖
 
 ---
 

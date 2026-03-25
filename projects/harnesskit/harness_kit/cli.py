@@ -36,6 +36,8 @@ from harness_kit import cost_tracker as _cost_tracker_mod
 from harness_kit import stats as _stats_mod
 from harness_kit import improvement as _improve_mod
 from harness_kit import health as _health_mod
+from harness_kit import registry as _registry_mod
+from harness_kit import skill_package as _skill_package_mod
 from harness_kit.llm import LLMConfig, build_messages, call_llm
 
 app = typer.Typer(
@@ -1587,6 +1589,104 @@ def skill_deps(
     console.print(f"\n[dim]Total: {total} dependency(ies)[/dim]")
 
 
+@skill_app.command("search")
+def skill_search(
+    keyword: str = typer.Argument(..., help="Keyword to search for (name, description, or tag)."),
+) -> None:
+    """Search the local Skills Registry by keyword."""
+    results = _registry_mod.search_registry(keyword)
+    if not results:
+        console.print(f"[dim]No registry entries matching '[bold]{keyword}[/bold]'.[/dim]")
+        console.print("[dim]Tip: install skills first with [bold]harnesskit skill install <path>[/bold][/dim]")
+        return
+
+    table = Table(title=f"Registry search: {keyword}", show_lines=False)
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Version", style="blue")
+    table.add_column("Description")
+    table.add_column("Source", style="dim", no_wrap=True)
+    table.add_column("Installed At", style="dim", no_wrap=True)
+
+    for entry in results:
+        installed_at = entry.get("installed_at", "")[:10]
+        source = entry.get("source", "")
+        if len(source) > 40:
+            source = "…" + source[-39:]
+        table.add_row(
+            entry.get("name", ""),
+            entry.get("version", ""),
+            entry.get("description", ""),
+            source,
+            installed_at,
+        )
+
+    console.print(table)
+
+
+@skill_app.command("install")
+def skill_install(
+    source: str = typer.Argument(
+        ...,
+        help=(
+            "Install source: local .yaml path, local .hsk path, "
+            "or Git URL (github:user/repo/branch/path/skill.yaml)."
+        ),
+    ),
+) -> None:
+    """Install a skill from a local file or Git URL."""
+    _require_init()
+    import shutil  # noqa: PLC0415
+
+    src = source.strip()
+
+    # Detect source type
+    if src.startswith("github:") or src.startswith("https://"):
+        console.print(f"[cyan]Fetching skill from:[/cyan] {src}")
+        try:
+            name = _skill_package_mod.install_skill_from_git(src)
+            console.print(f"[green]✓ Installed skill '[bold]{name}[/bold]' from Git URL.[/green]")
+            console.print(f"  [dim]Registered in local registry.[/dim]")
+        except Exception as exc:
+            console.print(f"[red]✗ Failed to install from URL: {exc}[/red]")
+            raise typer.Exit(1)
+    else:
+        path = Path(src)
+        if not path.exists():
+            console.print(f"[red]✗ File not found: {path}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[cyan]Installing from:[/cyan] {path}")
+        try:
+            name = _skill_package_mod.install_skill_from_path(path)
+            console.print(f"[green]✓ Installed skill '[bold]{name}[/bold]'.[/green]")
+            console.print(f"  [dim]Registered in local registry (~/.harnesskit/registry.json).[/dim]")
+        except Exception as exc:
+            console.print(f"[red]✗ Install failed: {exc}[/red]")
+            raise typer.Exit(1)
+
+
+@skill_app.command("publish")
+def skill_publish(
+    name: str = typer.Argument(..., help="Skill name to publish."),
+    version: Optional[str] = typer.Option(None, "--version", "-v", help="Version to publish (default: current)."),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory (default: current dir)."),
+) -> None:
+    """Package a skill and its dependencies into a .hsk archive."""
+    _require_init()
+    try:
+        pkg_path = _skill_package_mod.publish_skill(
+            name=name,
+            version=version,
+            output_dir=output,
+        )
+        console.print(f"[green]✓ Published:[/green] [bold]{pkg_path}[/bold]")
+        console.print(f"  [dim]Package contains skill + all asset dependencies.[/dim]")
+        console.print(f"  [dim]Share and install with: [bold]harnesskit skill install {pkg_path.name}[/bold][/dim]")
+    except FileNotFoundError as exc:
+        console.print(f"[red]✗ {exc}[/red]")
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]✗ Publish failed: {exc}[/red]")
+        raise typer.Exit(1)
 
 
 

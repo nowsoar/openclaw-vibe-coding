@@ -3574,8 +3574,104 @@ Phase 8.7 ships with **18 pytest tests** in `tests/test_export.py`:
 
 ---
 
+## Phase 8.8 — Skills Registry
+
+Phase 8.8 adds a **local Skills Registry** backed by `~/.harnesskit/registry.json`, plus three new
+`harnesskit skill` sub-commands: `search`, `install`, and `publish`.  Skills can be packaged as
+`.hsk` archives (zip bundles that include all asset dependencies) and shared across machines or
+teammates.
+
+### Skills Registry overview
+
+```
+~/.harnesskit/registry.json
+  {
+    "code-reviewer": {
+      "name": "code-reviewer",
+      "version": "v0.1.0",
+      "source": "/path/to/code-reviewer.yaml",
+      "description": "Review code for bugs and style issues",
+      "tags": ["code", "review"],
+      "installed_at": "2026-03-25T10:00:00+00:00"
+    }
+  }
+```
+
+The registry is a simple JSON file in your home directory — no server required.
+
+### New CLI commands (Phase 8.8)
+
+#### `harnesskit skill search <keyword>`
+
+Search the local registry by name, description, or tag (case-insensitive):
+
+```bash
+harnesskit skill search code
+# ┌────────────────┬─────────┬─────────────────────────────┬─────────┐
+# │ Name           │ Version │ Description                 │ Source  │
+# ├────────────────┼─────────┼─────────────────────────────┼─────────┤
+# │ code-reviewer  │ v0.1.0  │ Review code for bugs        │ local   │
+# └────────────────┴─────────┴─────────────────────────────┴─────────┘
+```
+
+#### `harnesskit skill install <source>`
+
+Install a skill from multiple source types:
+
+```bash
+# From a local YAML file
+harnesskit skill install ./my-skill.yaml
+
+# From a .hsk package
+harnesskit skill install my-skill-v0.1.0.hsk
+
+# From a GitHub URL
+harnesskit skill install github:anthropics/harnesskit-skills/main/code-reviewer/skill.yaml
+```
+
+After installation, the skill is registered in `~/.harnesskit/registry.json`.
+
+#### `harnesskit skill publish <name>`
+
+Package a skill and all its dependencies (prompts, schemas, rules, contexts) into a `.hsk` archive:
+
+```bash
+harnesskit skill publish code-reviewer
+# ✓ Published: /path/to/code-reviewer-v0.1.0.hsk
+#   Package contains skill + all asset dependencies.
+#   Share and install with: harnesskit skill install code-reviewer-v0.1.0.hsk
+
+# Publish a specific version to a custom output directory
+harnesskit skill publish code-reviewer --version v0.1.0 --output ./dist/
+```
+
+The `.hsk` format is a standard zip archive containing:
+- `manifest.json` — metadata (skill name, version, packaged_at, file list)
+- `skills/{name}/{version}.yaml` — the skill definition
+- `prompts/{name}/{version}.yaml` — bundled prompts (if any)
+- `schemas/{name}/{version}.json` — bundled schemas (if any)
+- `rules/{name}.yaml` — bundled rules (if any)
+- `contexts/{name}/{version}.yaml` — bundled contexts (if any)
+
+### Phase 8.8 test coverage
+
+Phase 8.8 ships with **36 pytest tests** in `tests/test_registry.py`:
+
+| Test class | Tests | What is covered |
+|---|---|---|
+| `TestRegistry` | 11 | register, unregister, list, search by name/description/tag, persistence |
+| `TestPublish` | 6 | creates .hsk file, valid zip, manifest fields, skill yaml inside, unknown skill error, bundled rule |
+| `TestInstallFromYaml` | 4 | creates skill, registers in registry, missing file error, unsupported extension error |
+| `TestInstallFromHsk` | 2 | full roundtrip publish→install, _current marker written |
+| `TestResolveRawUrl` | 3 | github: shorthand, https:// passthrough, invalid github: format |
+| `TestCliSearch` | 3 | empty registry, finds registered skill, no-match tip |
+| `TestCliInstall` | 3 | install from yaml, missing file exit 1, registers in registry |
+| `TestCliPublish` | 3 | creates package, unknown skill exit 1, output contains .hsk hint |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 8.7 complete** — MCP Server Export + AGENTS.md Export — 2 new CLI commands, 18 new tests all passing.
+Current status: **Phase 8.8 complete** — Skills Registry — 3 new CLI commands (`skill search`, `skill install`, `skill publish`), 36 new tests all passing.
