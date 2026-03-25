@@ -33,6 +33,7 @@ from harness_kit import agent as _agent_mod
 from harness_kit import blueprint as _blueprint_mod
 from harness_kit import eval as _eval_mod
 from harness_kit import cost_tracker as _cost_tracker_mod
+from harness_kit import stats as _stats_mod
 from harness_kit.llm import LLMConfig, build_messages, call_llm
 
 app = typer.Typer(
@@ -126,6 +127,13 @@ app.add_typer(eval_app, name="eval")
 
 cost_app = typer.Typer(help="Track and report LLM call costs.", no_args_is_help=True)
 app.add_typer(cost_app, name="cost")
+
+# ---------------------------------------------------------------------------
+# stats sub-app
+# ---------------------------------------------------------------------------
+
+stats_app = typer.Typer(help="Statistics dashboard for skills and harnesses.", no_args_is_help=True)
+app.add_typer(stats_app, name="stats")
 
 
 def _require_init() -> None:
@@ -4162,6 +4170,107 @@ def eval_trend(
         f"[bold]Avg:[/bold] [cyan]{avg_rate * 100:.1f}%[/cyan]  "
         f"[dim]({len(entries)} runs shown)[/dim]"
     )
+
+
+# ---------------------------------------------------------------------------
+# stats commands
+# ---------------------------------------------------------------------------
+
+
+@stats_app.command("show")
+def stats_show_cmd(
+    target: str = typer.Argument(..., help="Skill or harness name to inspect."),
+    since: Optional[str] = typer.Option(None, "--since", "-s", help="Time window: 1d, 7d, 30d, etc. Default: all time."),
+    bar_width: int = typer.Option(30, "--bar-width", help="Width of ASCII bar charts (characters)."),
+) -> None:
+    """Show statistics dashboard for a skill or harness.
+
+    Displays call count, success rate, duration stats, token consumption
+    distribution, error type breakdown, and model usage — all rendered
+    as rich tables and ASCII bar charts.
+    """
+    _require_init()
+    data = _stats_mod.skill_stats(target=target, since=since)
+
+    since_label = f"last {since}" if since else "all time"
+    console.print(f"\n[bold cyan]── Stats: {target} ({since_label}) ──[/bold cyan]\n")
+
+    if data["total_calls"] == 0:
+        console.print(f"[dim]No call logs found for [bold]{target}[/bold].[/dim]")
+        console.print("[dim]Run a skill first: [bold]harnesskit skill run <name>[/bold][/dim]")
+        return
+
+    # ── Overview table ────────────────────────────────────────────────────
+    overview = Table(title="Overview", show_header=True, header_style="bold magenta")
+    overview.add_column("Metric", style="cyan", no_wrap=True)
+    overview.add_column("Value", justify="right")
+
+    total = data["total_calls"]
+    sr = data["success_rate"] * 100
+    sr_color = "green" if sr >= 90 else ("yellow" if sr >= 70 else "red")
+
+    overview.add_row("Total calls", str(total))
+    overview.add_row("Successful", f"[green]{data['success_calls']}[/green]")
+    overview.add_row("Errors", f"[red]{data['error_calls']}[/red]" if data["error_calls"] else "0")
+    overview.add_row("Success rate", f"[{sr_color}]{sr:.1f}%[/{sr_color}]")
+
+    if data["avg_duration"] is not None:
+        overview.add_row("Avg duration", f"{data['avg_duration']:.2f}s")
+        overview.add_row("Min duration", f"{data['min_duration']:.2f}s")
+        overview.add_row("Max duration", f"{data['max_duration']:.2f}s")
+
+    if data["avg_total_tokens"] is not None:
+        overview.add_row("Avg tokens / call", f"{data['avg_total_tokens']:.0f}")
+        overview.add_row("  ↳ input", f"{data['avg_input_tokens']:.0f}")
+        overview.add_row("  ↳ output", f"{data['avg_output_tokens']:.0f}")
+        overview.add_row("Total tokens", f"{data['total_tokens']:,}")
+
+    if data["total_cost"] > 0:
+        overview.add_row("Total cost", f"[green]${data['total_cost']:.4f}[/green]")
+        if data["avg_cost"] is not None:
+            overview.add_row("Avg cost / call", f"${data['avg_cost']:.6f}")
+
+    console.print(overview)
+
+    # ── Token distribution chart ──────────────────────────────────────────
+    if data["token_buckets"]:
+        console.print("\n[bold]Token Consumption Distribution[/bold] (total tokens per call)\n")
+        rows = _stats_mod.bar_chart_rows(data["token_buckets"], bar_width=bar_width, color="blue")
+        for label, count, bar in rows:
+            if count > 0:
+                console.print(f"  {label:<10} {bar} {count:>5}")
+        console.print()
+
+    # ── Duration distribution chart ───────────────────────────────────────
+    if data["duration_buckets"]:
+        console.print("[bold]Duration Distribution[/bold]\n")
+        rows = _stats_mod.bar_chart_rows(data["duration_buckets"], bar_width=bar_width, color="cyan")
+        for label, count, bar in rows:
+            if count > 0:
+                console.print(f"  {label:<10} {bar} {count:>5}")
+        console.print()
+
+    # ── Model usage table ─────────────────────────────────────────────────
+    if data["models_used"]:
+        model_table = Table(title="Model Usage", show_lines=False)
+        model_table.add_column("Model", style="blue")
+        model_table.add_column("Calls", justify="right")
+        model_table.add_column("Share", justify="right")
+        for model, count in data["models_used"].items():
+            share = f"{count / total * 100:.1f}%"
+            model_table.add_row(model, str(count), share)
+        console.print(model_table)
+        console.print()
+
+    # ── Error type distribution ───────────────────────────────────────────
+    if data["error_types"]:
+        console.print("[bold]Error Type Distribution[/bold]\n")
+        err_rows = _stats_mod.bar_chart_rows(data["error_types"], bar_width=bar_width, color="red")
+        for label, count, bar in err_rows:
+            console.print(f"  {label:<50} {bar} {count:>4}")
+        console.print()
+    elif data["error_calls"] == 0:
+        console.print("[dim]No errors recorded — [green]all calls succeeded[/green][/dim]\n")
 
 
 if __name__ == "__main__":

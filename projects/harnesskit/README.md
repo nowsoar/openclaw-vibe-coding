@@ -1306,6 +1306,11 @@ harnesskit agent run code-assistant
 | `harnesskit skill run <name> --check-rules lenient` | Warn on violations, continue |
 | `harnesskit logs tail` | View recent LLM call logs |
 | `harnesskit logs search` | Search/filter call logs |
+| `harnesskit cost report` | Cost report grouped by skill/model/day |
+| `harnesskit cost breakdown` | Per-call cost breakdown (most expensive first) |
+| `harnesskit cost set-price` | Override model pricing in config |
+| `harnesskit stats show <name>` | Statistics dashboard for a skill/harness |
+| `harnesskit stats show <name> --since 7d` | Stats for the last 7 days |
 | `harnesskit harness create <name>` | Create/update a harness |
 | `harnesskit harness show <name[@ver]>` | Display harness definition |
 | `harnesskit harness list` | List all harnesses |
@@ -2310,6 +2315,83 @@ Every call log record includes the computed cost:
 
 ---
 
+## Phase 6.3 — 统计仪表盘 (Statistics Dashboard)
+
+Phase 6.3 adds a rich statistics dashboard that aggregates call-log data for any skill or harness and renders it as tables and ASCII bar charts directly in the terminal.
+
+### `harnesskit stats show`
+
+```bash
+harnesskit stats show my-skill              # all-time stats
+harnesskit stats show my-skill --since 7d   # last 7 days
+harnesskit stats show my-skill --since 24h  # last 24 hours
+harnesskit stats show my-skill --bar-width 40  # wider bar charts
+```
+
+**Example output:**
+
+```
+── Stats: my-skill (last 7d) ──
+
+Overview
+┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Metric               ┃     Value ┃
+┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ Total calls          │        47 │
+│ Successful           │        44 │
+│ Errors               │         3 │
+│ Success rate         │     93.6% │
+│ Avg duration         │     2.14s │
+│ Min duration         │     0.82s │
+│ Max duration         │     8.37s │
+│ Avg tokens / call    │       621 │
+│   ↳ input            │       499 │
+│   ↳ output           │       122 │
+│ Total tokens         │    29,187 │
+│ Total cost           │  $0.0726  │
+│ Avg cost / call      │ $0.001544 │
+└──────────────────────┴───────────┘
+
+Token Consumption Distribution (total tokens per call)
+
+  0–100      ████░░░░░░░░░░░░░░░░░░░░░░░░░░     3
+  101–250    ████████░░░░░░░░░░░░░░░░░░░░░░     8
+  251–500    ██████████████░░░░░░░░░░░░░░░░    14
+  501–1K     ██████████████████████░░░░░░░░    22
+
+Duration Distribution
+
+  0–1s       ████░░░░░░░░░░░░░░░░░░░░░░░░░░     4
+  1–3s       █████████████████████░░░░░░░░░    21
+  3–5s       ████████████░░░░░░░░░░░░░░░░░░    12
+  5–10s      ██████░░░░░░░░░░░░░░░░░░░░░░░░     6
+
+Model Usage
+┏━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━┓
+┃ Model         ┃ Calls ┃ Share ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━┩
+│ gpt-4o        │    32 │ 68.1% │
+│ gpt-4o-mini   │    15 │ 31.9% │
+└───────────────┴───────┴───────┘
+
+No errors recorded — all calls succeeded
+```
+
+### What's tracked
+
+| Metric | Description |
+|---|---|
+| Call count | Total, successful, and error call counts |
+| Success rate | Percentage of successful calls (green ≥90%, yellow ≥70%, red <70%) |
+| Duration stats | Average, min, and max call duration in seconds |
+| Token distribution | Histogram of total tokens per call across 8 size buckets |
+| Duration distribution | Histogram of call duration across 6 time buckets |
+| Model usage | Which models were used and how often |
+| Error types | Frequency of each distinct error message |
+| Cost summary | Total and average USD cost per call |
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -2345,4 +2427,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 6.2 complete** — 成本追踪 — Automatic per-call cost estimation, `harnesskit cost report` (grouped by skill/model/day), `harnesskit cost breakdown`, `harnesskit cost set-price`, and config-driven alert thresholds. 34 new pytest tests (all passing, 1110 total).
+Current status: **Phase 6.3 complete** — 统计仪表盘 — `harnesskit stats show <skill/harness>` renders call count, success rate, duration stats, token distribution, error type distribution, and model usage as rich tables and ASCII bar charts. 32 new pytest tests (all passing, 1142 total).
