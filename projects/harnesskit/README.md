@@ -2980,8 +2980,71 @@ Phase 7.5 ships with **35 pytest tests** in `tests/test_tui_logs_browser.py`:
 
 ---
 
+## Phase 7.6 — TUI 优化与完善 (TUI Polish & Completion)
+
+Phase 7.6 polishes the TUI with four user-experience improvements:
+
+1. **Enhanced help page** — The `?` overlay is now scrollable (`ScrollableContainer`) and documents every shortcut across all screens, including the new theme-toggle key.
+2. **Theme toggle** — Press `t` to switch between `textual-dark` and `textual-light` themes without restarting.
+3. **Responsive layout** — The sidebar narrows automatically when the terminal is resized: 16 cols at <80 wide, 22 cols at 80–99 wide, 24 cols at ≥100 wide.
+4. **Error handling** — All `push_screen` calls are wrapped in `try/except`; failures surface as Textual toast notifications (`self.notify`) instead of crashing the app.
+
+### Quick reference
+
+| Key | Action |
+|-----|--------|
+| `t` | Toggle Dark ↔ Light theme |
+| `?` | Open / close scrollable help page |
+| `j` / `k` | Navigate up / down in current list |
+| `Enter` | Open screen for selected section |
+| `Esc` | Return to previous screen |
+| `q` | Quit |
+
+### Theme toggle
+
+```
+harnesskit tui      # launches in default dark theme
+# press 't' to switch to light theme, press again to go back
+```
+
+### Responsive layout
+
+The sidebar automatically adapts its width to the terminal size:
+
+| Terminal width | Sidebar width |
+|---------------|---------------|
+| < 80 cols     | 16 cols       |
+| 80–99 cols    | 22 cols       |
+| ≥ 100 cols    | 24 cols       |
+
+### Error handling
+
+If a screen fails to load (e.g., missing data files), the app shows a toast notification at the top of the screen instead of crashing:
+
+```
+[ERROR] 加载屏幕时发生未知错误
+```
+
+### Phase 7.6 test coverage
+
+Phase 7.6 ships with **23 pytest tests** in `tests/test_tui_phase76.py`:
+
+| Category | Tests | Description |
+|----------|-------|-------------|
+| Binding checks | 3 | `t` key present; original bindings preserved; theme action callable |
+| Help page | 3 | CSS overflow, scrollable container, theme key mentioned |
+| Error handling | 2 | `action_select_item` and `on_list_view_selected` both have `try/except` |
+| Source inspection | 2 | Theme action uses `self.theme`; resize handler adjusts sidebar |
+| Pilot — theme toggle | 4 | Dark↔light toggle, restore after 2 presses, only dark/light values |
+| Pilot — help overlay | 3 | Shows on `?`, closes on any key, contains scrollable container |
+| Pilot — help content | 1 | 't' key and 主题 appear in label text |
+| Pilot — responsive | 2 | Narrow (≤20) and wide (24) sidebar after resize |
+| Pilot — misc | 3 | No crash on nav, theme does not affect index, help + theme combo |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 7.5 complete** — 实时日志流 — real-time log stream browser with Skill/time/search filtering, pause/resume, colour-coded success/error rows, and auto-refresh every 2 s; 35 new tests all passing.
+Current status: **Phase 7.6 complete** — TUI 优化与完善 — scrollable help page, `t`-key theme toggle (dark ↔ light), responsive sidebar, and error-safe screen loading; 23 new tests all passing (169 total TUI tests).

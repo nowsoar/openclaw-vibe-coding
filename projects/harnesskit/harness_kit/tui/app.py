@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, ScrollableContainer, Vertical
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
@@ -166,7 +167,11 @@ class ContentPanel(Static):
 
 
 class HelpOverlay(Container):
-    """Help overlay widget shown when '?' is pressed."""
+    """Help overlay widget shown when '?' is pressed.
+
+    The inner content is wrapped in a :class:`~textual.containers.ScrollableContainer`
+    so the help page remains usable even on short terminals.
+    """
 
     DEFAULT_CSS = """
     HelpOverlay {
@@ -174,12 +179,13 @@ class HelpOverlay(Container):
         background: $background 80%;
         layer: overlay;
     }
-    HelpOverlay > Container {
-        width: 50;
-        height: auto;
+    HelpOverlay > ScrollableContainer {
+        width: 60;
+        max-height: 85vh;
         background: $surface;
         border: double $primary;
         padding: 1 2;
+        overflow-y: auto;
     }
     HelpOverlay Label {
         margin-bottom: 1;
@@ -187,37 +193,46 @@ class HelpOverlay(Container):
     """
 
     def compose(self) -> ComposeResult:
-        with Container():
-            yield Label("[bold yellow]键盘快捷键[/bold yellow]")
+        with ScrollableContainer():
+            yield Label("[bold yellow]HarnessKit TUI — 键盘快捷键[/bold yellow]")
             yield Label("")
-            yield Label("[cyan]j / ↓[/cyan]    向下移动")
-            yield Label("[cyan]k / ↑[/cyan]    向上移动")
-            yield Label("[cyan]Enter[/cyan]    进入 / 选择  （Skills → Skill 浏览器 | Prompts → Prompt Diff | Eval → Eval 结果浏览器 | Logs → 实时日志流）")
-            yield Label("[cyan]Esc[/cyan]      返回上一屏")
-            yield Label("[cyan]?[/cyan]        显示 / 关闭帮助")
-            yield Label("[cyan]q[/cyan]        退出 HarnessKit TUI")
+            yield Label("[bold]全局导航[/bold]")
+            yield Label("[cyan]j / ↓[/cyan]         向下移动")
+            yield Label("[cyan]k / ↑[/cyan]         向上移动")
+            yield Label(
+                "[cyan]Enter[/cyan]         进入 / 选择 "
+                "（Skills → Skill 浏览器 | Prompts → Prompt Diff | "
+                "Eval → Eval 结果浏览器 | Logs → 实时日志流）"
+            )
+            yield Label("[cyan]Esc[/cyan]           返回上一屏")
+            yield Label("[cyan]?[/cyan]             显示 / 关闭帮助页面")
+            yield Label("[cyan]t[/cyan]             切换 Dark / Light 主题")
+            yield Label("[cyan]q[/cyan]             退出 HarnessKit TUI")
             yield Label("")
-            yield Label("[bold]Skill 浏览器快捷键[/bold]")
-            yield Label("[cyan]r[/cyan]        运行 Skill（显示命令）")
-            yield Label("[cyan]d[/cyan]        对比版本（显示命令）")
-            yield Label("[cyan]e[/cyan]        编辑 Skill（显示命令）")
+            yield Label("[bold]Skill 浏览器[/bold]")
+            yield Label("[cyan]r[/cyan]             运行 Skill（显示命令）")
+            yield Label("[cyan]d[/cyan]             对比版本（显示命令）")
+            yield Label("[cyan]e[/cyan]             编辑 Skill（显示命令）")
             yield Label("")
-            yield Label("[bold]Prompt Diff 快捷键[/bold]")
-            yield Label("[cyan]j / k[/cyan]    同步滚动 diff 面板")
-            yield Label("[cyan]Esc[/cyan]      返回主菜单")
+            yield Label("[bold]Prompt Diff[/bold]")
+            yield Label("[cyan]j / k[/cyan]         同步滚动 diff 面板")
+            yield Label("[cyan]Esc[/cyan]           返回主菜单")
             yield Label("")
-            yield Label("[bold]Eval 结果浏览器快捷键[/bold]")
-            yield Label("[cyan]Tab[/cyan]      切换 Suites / Cases 面板")
-            yield Label("[cyan]j / k[/cyan]    在当前面板上下移动")
-            yield Label("[cyan]Esc[/cyan]      返回主菜单")
+            yield Label("[bold]Eval 结果浏览器[/bold]")
+            yield Label("[cyan]Tab[/cyan]           切换 Suites / Cases 面板")
+            yield Label("[cyan]j / k[/cyan]         在当前面板上下移动")
+            yield Label("[cyan]Esc[/cyan]           返回主菜单")
             yield Label("")
-            yield Label("[bold]实时日志流快捷键[/bold]")
-            yield Label("[cyan]Space[/cyan]    暂停 / 继续实时刷新")
-            yield Label("[cyan]r[/cyan]        立即刷新日志")
-            yield Label("[cyan]j / k[/cyan]    滚动日志面板")
-            yield Label("[cyan]Esc[/cyan]      返回主菜单")
+            yield Label("[bold]实时日志流[/bold]")
+            yield Label("[cyan]Space[/cyan]         暂停 / 继续实时刷新")
+            yield Label("[cyan]r[/cyan]             立即刷新日志")
+            yield Label("[cyan]j / k[/cyan]         滚动日志面板")
+            yield Label("[cyan]Esc[/cyan]           返回主菜单")
             yield Label("")
-            yield Label("[dim]按任意键关闭[/dim]")
+            yield Label("[bold]主题[/bold]")
+            yield Label("[cyan]t[/cyan]             Dark ↔ Light 切换（持久到本次会话）")
+            yield Label("")
+            yield Label("[dim]按任意键关闭帮助[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +276,7 @@ class HarnessKitApp(App):
         Binding("j", "cursor_down", "向下", show=True),
         Binding("k", "cursor_up", "向上", show=True),
         Binding("question_mark", "toggle_help", "帮助", show=True),
+        Binding("t", "toggle_theme", "切换主题", show=True),
         Binding("enter", "select_item", "选择", show=True),
         Binding("down", "cursor_down", "向下", show=False),
         Binding("up", "cursor_up", "向上", show=False),
@@ -320,21 +336,31 @@ class HarnessKitApp(App):
         :class:`SkillBrowserScreen`; pressing Enter on *Prompts* opens the
         :class:`PromptDiffScreen`; all other sections simply refresh
         the description in the content panel.
+
+        Errors are caught and shown via :meth:`notify` so the app never crashes.
         """
         idx = self._selected_index
         if 0 <= idx < len(NAV_ITEMS):
             item_id = NAV_ITEMS[idx][0]
-            if item_id == "skills":
-                self.push_screen(SkillBrowserScreen())
-                return
-            if item_id == "prompts":
-                self.push_screen(PromptDiffScreen())
-                return
-            if item_id == "eval":
-                self.push_screen(EvalBrowserScreen())
-                return
-            if item_id == "logs":
-                self.push_screen(LogsBrowserScreen())
+            try:
+                if item_id == "skills":
+                    self.push_screen(SkillBrowserScreen())
+                    return
+                if item_id == "prompts":
+                    self.push_screen(PromptDiffScreen())
+                    return
+                if item_id == "eval":
+                    self.push_screen(EvalBrowserScreen())
+                    return
+                if item_id == "logs":
+                    self.push_screen(LogsBrowserScreen())
+                    return
+            except Exception as exc:  # noqa: BLE001
+                self.notify(
+                    str(exc) or "加载屏幕时发生未知错误",
+                    title="错误",
+                    severity="error",
+                )
                 return
         self._update_content(idx)
 
@@ -343,19 +369,26 @@ class HarnessKitApp(App):
 
         The ListView consumes the Enter key to fire this event before the
         App-level binding runs.  We use it to navigate into the Skill browser
-        or the Prompt Diff screen.
+        or the Prompt Diff screen.  Errors are shown via :meth:`notify`.
         """
         idx = self._selected_index
         if 0 <= idx < len(NAV_ITEMS):
             item_id = NAV_ITEMS[idx][0]
-            if item_id == "skills":
-                self.push_screen(SkillBrowserScreen())
-            elif item_id == "prompts":
-                self.push_screen(PromptDiffScreen())
-            elif item_id == "eval":
-                self.push_screen(EvalBrowserScreen())
-            elif item_id == "logs":
-                self.push_screen(LogsBrowserScreen())
+            try:
+                if item_id == "skills":
+                    self.push_screen(SkillBrowserScreen())
+                elif item_id == "prompts":
+                    self.push_screen(PromptDiffScreen())
+                elif item_id == "eval":
+                    self.push_screen(EvalBrowserScreen())
+                elif item_id == "logs":
+                    self.push_screen(LogsBrowserScreen())
+            except Exception as exc:  # noqa: BLE001
+                self.notify(
+                    str(exc) or "加载屏幕时发生未知错误",
+                    title="错误",
+                    severity="error",
+                )
 
     def action_toggle_help(self) -> None:
         self._help_visible = not self._help_visible
@@ -364,6 +397,25 @@ class HarnessKitApp(App):
         else:
             overlay = self.query_one("#help-overlay")
             overlay.remove()
+
+    def action_toggle_theme(self) -> None:
+        """Toggle between dark (textual-dark) and light (textual-light) theme."""
+        self.theme = (
+            "textual-light" if self.theme == "textual-dark" else "textual-dark"
+        )
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Adapt sidebar width to terminal width for a responsive layout."""
+        try:
+            sidebar = self.query_one(Sidebar)
+            if event.size.width < 80:
+                sidebar.styles.width = 16
+            elif event.size.width < 100:
+                sidebar.styles.width = 22
+            else:
+                sidebar.styles.width = 24
+        except Exception:  # noqa: BLE001
+            pass
 
     def on_key(self, event) -> None:  # type: ignore[override]
         """Close help overlay on any key when it is visible."""
