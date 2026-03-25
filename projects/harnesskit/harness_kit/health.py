@@ -240,14 +240,15 @@ def _load_call_logs(hd: Path) -> list[dict[str, Any]]:
     if not log_file.exists():
         return []
     records: list[dict[str, Any]] = []
-    for line in log_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            records.append(json.loads(line))
-        except Exception:
-            continue
+    with log_file.open(encoding="utf-8") as fh:
+        for raw in fh:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                records.append(json.loads(raw))
+            except Exception:
+                continue
     return records
 
 

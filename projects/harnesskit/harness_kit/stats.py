@@ -47,7 +47,10 @@ def _load_records(
     since: str | None,
     base: Path | None,
 ) -> list[dict[str, Any]]:
-    """Load matching call-log records from .harness/logs/calls.jsonl."""
+    """Load matching call-log records from .harness/logs/calls.jsonl.
+
+    Reads the file line-by-line to avoid loading the entire log into memory.
+    """
     import json
 
     from harness_kit.config import harness_dir
@@ -59,30 +62,31 @@ def _load_records(
     cutoff = _parse_since(since)
     records: list[dict[str, Any]] = []
 
-    for line in log_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except Exception:
-            continue
-
-        # Filter by target name (skill field)
-        if target and rec.get("skill") != target:
-            continue
-
-        # Filter by time window
-        if cutoff is not None:
-            ts_str = rec.get("timestamp", "")
+    with log_file.open(encoding="utf-8") as fh:
+        for raw in fh:
+            raw = raw.strip()
+            if not raw:
+                continue
             try:
-                ts = datetime.fromisoformat(ts_str)
-                if ts < cutoff:
-                    continue
-            except ValueError:
+                rec = json.loads(raw)
+            except Exception:
                 continue
 
-        records.append(rec)
+            # Filter by target name (skill field)
+            if target and rec.get("skill") != target:
+                continue
+
+            # Filter by time window
+            if cutoff is not None:
+                ts_str = rec.get("timestamp", "")
+                try:
+                    ts = datetime.fromisoformat(ts_str)
+                    if ts < cutoff:
+                        continue
+                except ValueError:
+                    continue
+
+            records.append(rec)
 
     return records
 

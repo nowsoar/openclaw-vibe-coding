@@ -2,18 +2,36 @@
 
 from __future__ import annotations
 
+import collections
 import csv
 import io
 import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 
 def _logs_file(base: Path | None = None) -> Path:
     from harness_kit.config import harness_dir
     return harness_dir(base) / "logs" / "calls.jsonl"
+
+
+def _iter_records(log_file: Path) -> Generator[dict[str, Any], None, None]:
+    """Yield parsed JSON records from *log_file* one line at a time.
+
+    Reads the file incrementally so large log files are never loaded fully
+    into memory.  Malformed lines are silently skipped.
+    """
+    with log_file.open(encoding="utf-8") as fh:
+        for raw in fh:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                yield json.loads(raw)
+            except json.JSONDecodeError:
+                continue
 
 
 def _parse_since(since: str | None) -> datetime | None:
@@ -107,6 +125,9 @@ def tail_logs(
 ) -> list[dict[str, Any]]:
     """Return the last *n* call log records, optionally filtered by *since*.
 
+    Uses a rolling deque so only *n* records are kept in memory at once,
+    making this efficient even for very large log files.
+
     Parameters
     ----------
     n:
@@ -119,15 +140,8 @@ def tail_logs(
     if not log_file.exists():
         return []
     cutoff = _parse_since(since)
-    records: list[dict[str, Any]] = []
-    for line in log_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    window: collections.deque[dict[str, Any]] = collections.deque(maxlen=n)
+    for rec in _iter_records(log_file):
         if cutoff is not None:
             ts_str = rec.get("timestamp", "")
             try:
@@ -136,8 +150,8 @@ def tail_logs(
                     continue
             except ValueError:
                 continue
-        records.append(rec)
-    return records[-n:]
+        window.append(rec)
+    return list(window)
 
 
 def search_logs(
@@ -148,6 +162,8 @@ def search_logs(
     base: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Search call logs with optional filters.
+
+    Reads the log file incrementally to keep memory usage low.
 
     Parameters
     ----------
@@ -165,15 +181,8 @@ def search_logs(
     if not log_file.exists():
         return []
     cutoff = _parse_since(since)
-    results: list[dict[str, Any]] = []
-    for line in log_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    results: collections.deque[dict[str, Any]] = collections.deque(maxlen=limit)
+    for record in _iter_records(log_file):
         if skill and record.get("skill") != skill:
             continue
         if status and record.get("status") != status:
@@ -187,7 +196,7 @@ def search_logs(
             except ValueError:
                 continue
         results.append(record)
-    return results[-limit:]
+    return list(results)
 
 
 def export_logs(
@@ -237,14 +246,7 @@ def violation_stats(
     if not log_file.exists():
         return {}
     counts: dict[str, int] = {}
-    for line in log_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    for record in _iter_records(log_file):
         for v in record.get("violations") or []:
             rule = v.get("rule", "unknown")
             counts[rule] = counts.get(rule, 0) + 1

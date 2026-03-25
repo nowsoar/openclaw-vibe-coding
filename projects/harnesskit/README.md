@@ -2625,8 +2625,39 @@ Fixed: 2  Failed: 0
 
 ---
 
+## Phase 6.6 — Phase 6 集成与优化 (Observability Integration & Optimization)
+
+Phase 6.6 completes the Phase 6 observability layer with a comprehensive end-to-end integration test suite and performance optimizations for all log-reading paths.
+
+### Performance Improvements
+
+All log-reading functions (`tail_logs`, `search_logs`, `export_logs`, `violation_stats` in `call_logger.py`, plus the matching readers in `stats.py`, `improvement.py`, and `health.py`) have been upgraded from loading the entire file into memory to **streaming line-by-line** with `collections.deque`:
+
+| Before | After |
+|---|---|
+| `file.read_text().splitlines()` — whole file in RAM | `with file.open() as f: for line in f` — one line at a time |
+| `records[-n:]` — allocates full list then slices | `deque(maxlen=n)` — O(1) rolling window |
+
+This means `harnesskit logs tail`, `logs search`, `stats show`, and `health check` stay fast even when `.harness/logs/calls.jsonl` grows to millions of lines.
+
+### Integration Test Suite
+
+`tests/test_phase6_integration.py` adds **28 pytest tests** that verify the complete observability pipeline end-to-end:
+
+| Test Group | Coverage |
+|---|---|
+| `TestLogPipeline` (6) | write → tail → search → export CSV/JSONL → violation stats |
+| `TestCostPipeline` (4) | cost estimation, report by skill / by model, CLI smoke |
+| `TestStatsPipeline` (4) | success rate, duration buckets, token buckets, CLI smoke |
+| `TestImprovementPipeline` (4) | log improvement, history, report, CLI smoke |
+| `TestHealthPipeline` (5) | clean workspace, stale skill, unused asset, CLI, dry-run fix |
+| `TestEndToEndFlow` (2) | full Python API chain + full CLI chain |
+| `TestPerformance` (3) | 1000-record tail/search/export — each must complete < 1 s |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 6.5 complete** — Harness 健康检查 — `harnesskit health check` / `health fix` runs four health checks (skill staleness, low success rates, unused assets, outdated schemas), reports issues by severity (warning/critical), and auto-fixes unused assets with `--yes` or `--dry-run`. 39 new pytest tests (all passing, 1210 total).
+Current status: **Phase 6.6 complete** — Phase 6 集成与优化 — streaming log readers (deque-based tail, generator search), 28 new Phase 6 integration tests covering the full observability pipeline (logs → cost → stats → improvement → health check), all passing (1238 total).
