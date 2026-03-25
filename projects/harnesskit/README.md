@@ -3321,8 +3321,73 @@ Phase 8.4 ships with **42 pytest tests** in `tests/test_web_ab_compare.py`:
 
 ---
 
+## Phase 8.5 — Eval Dashboard
+
+Phase 8.5 brings a live **Eval Dashboard** to the Web Playground, giving you full visibility into
+your test suite health, historical pass-rate trends, and one-click suite runs — all from the browser.
+
+### Using the Eval Dashboard
+
+```bash
+harnesskit serve          # start web server (default: http://localhost:7749)
+# Click "Eval" in the navigation bar
+```
+
+### Dashboard layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Eval Dashboard                                     ↻ Refresh  │
+├──────────────┬──────────────┬──────────────────────────────────┤
+│  3           │  24          │  2                               │
+│  Test Suites │  Passed      │  Failed                          │
+├──────────────┴──────────────┴──────────────────────────────────┤
+│ Test Suites        [Filter…]  │  Recent Runs                   │
+│ ──────────────────────────── │  Time  Target  Suite  Pass Rate │
+│ ▸ code-review-suite          │  Mar 25 my-skill basic 2/2 100% │
+│   2 cases · 3 assertions     │  Mar 24 my-skill basic 1/2  50% │
+│   [Run]                      │                                 │
+│ ▸ second-suite               │                                 │
+│   1 case · 1 assertion       │                                 │
+├──────────────────────────────┴─────────────────────────────────┤
+│ Pass-Rate Trend                                 last 8 runs    │
+│ ────────────────────────────────────────────────────────────── │
+│ 100% ·····●────────────●···                                    │
+│  50%                        ●──●                               │
+│   0%                                                           │
+│      ● green=100%  ● yellow=≥70%  ● red=<70%                  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### New API endpoints (Phase 8.5)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/eval/suites` | List all test suites with case/assertion counts |
+| `GET` | `/api/eval/suites/{name}` | Get full suite definition |
+| `POST` | `/api/eval/suites/{name}/run` | Run suite against a skill (body: `{"target": "skill-name"}`) |
+| `GET` | `/api/eval/results` | List recent eval results (query: `limit=20`) |
+| `GET` | `/api/eval/trend` | Pass-rate trend points (query: `target`, `suite`, `limit`) |
+
+### Phase 8.5 test coverage
+
+Phase 8.5 ships with **49 pytest tests** in `tests/test_web_eval_dashboard.py`:
+
+| Class | Tests | What's covered |
+|-------|-------|----------------|
+| `TestListEvalSuites` | 4 | list returns all suites, summary fields (case_count, assertion_count), empty list, JSON content-type |
+| `TestGetEvalSuite` | 3 | suite detail, 404 on missing suite, second suite data |
+| `TestRunEvalSuite` | 5 | 404 missing suite/skill, 503 no API key, 200 success report shape, result file persisted |
+| `TestListEvalResults` | 6 | list, expected fields, summary fields, empty list, limit param, newest-first ordering |
+| `TestGetEvalTrend` | 7 | list, trend fields, pass_rate 0–1 range, empty list, target/suite filters, limit param |
+| `TestEvalPartialExists` | 2 | file exists, served via `/partials/eval` |
+| `TestEvalPartialStructure` | 15 | Alpine component, stats IDs, suite-list ID, search input, results-table ID, trend-chart ID, run-btn/target/error IDs, SVG sparkline, x-init load, API call refs, run method, empty-state, trend legend |
+| `TestBackwardsCompatibility` | 7 | Phase 8.1–8.4 API routes and partials still work |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 8.4 complete** — A/B Compare — side-by-side skill version comparison with parallel execution, word-level diff highlighting, and shared input form; 42 new tests all passing (155 total for Phase 8).
+Current status: **Phase 8.5 complete** — Eval Dashboard — live test suite browser, one-click suite runs, recent results table, and SVG sparkline trend chart; 49 new tests all passing (204 total for Phase 8).

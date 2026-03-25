@@ -1,4 +1,4 @@
-"""HarnessKit Web — FastAPI server + HTMX/Alpine.js frontend (Phase 8.4)."""
+"""HarnessKit Web — FastAPI server + HTMX/Alpine.js frontend (Phase 8.5)."""
 
 from __future__ import annotations
 
@@ -52,6 +52,11 @@ class CompareRequest(BaseModel):
 class CompareResponse(BaseModel):
     result_a: SkillRunResponse
     result_b: SkillRunResponse
+
+
+class EvalRunRequest(BaseModel):
+    target: str  # skill name to run against
+    model: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +274,133 @@ def create_app(base: Path | None = None) -> FastAPI:
         return CompareResponse(result_a=result_a, result_b=result_b)
 
     # ------------------------------------------------------------------
-    # Frontend routes (Phase 8.2)
+    # Eval API Routes (Phase 8.5)
+    # ------------------------------------------------------------------
+
+    @api.get("/api/eval/suites", summary="List all eval suites")
+    def list_eval_suites() -> list[dict[str, Any]]:
+        """Return summaries for every test suite in the local .harness directory."""
+        from harness_kit import eval as _eval_mod  # noqa: PLC0415
+
+        names = _eval_mod.list_suites(base=base_path)
+        results: list[dict[str, Any]] = []
+        for name in names:
+            try:
+                data = _eval_mod.load_suite(name, base=base_path)
+                results.append(_eval_mod.suite_summary(data))
+            except Exception:
+                results.append({"name": name, "description": "", "case_count": 0, "assertion_count": 0})
+        return results
+
+    @api.get("/api/eval/suites/{name}", summary="Get eval suite details")
+    def get_eval_suite(name: str) -> dict[str, Any]:
+        """Return the full definition of the named test suite."""
+        from harness_kit import eval as _eval_mod  # noqa: PLC0415
+
+        try:
+            return _eval_mod.load_suite(name, base=base_path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Suite '{name}' not found")
+
+    @api.post("/api/eval/suites/{name}/run", summary="Run an eval suite against a skill")
+    def run_eval_suite(name: str, body: EvalRunRequest) -> dict[str, Any]:
+        """Run a test suite against the specified skill and return the eval report."""
+        from harness_kit import eval as _eval_mod  # noqa: PLC0415
+        from harness_kit import skill as _skill_mod  # noqa: PLC0415
+        from harness_kit.config import read_config  # noqa: PLC0415
+        from harness_kit.llm import LLMConfig, build_messages, call_llm  # noqa: PLC0415
+
+        # Validate suite exists
+        try:
+            _eval_mod.load_suite(name, base=base_path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Suite '{name}' not found")
+
+        # Validate skill exists
+        try:
+            skill_data = _skill_mod.load_skill(body.target, base=base_path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Skill '{body.target}' not found")
+
+        # Build LLM config
+        try:
+            cfg = read_config(base=base_path)
+        except Exception:
+            cfg = {}
+        overrides: dict[str, Any] = {}
+        if body.model:
+            overrides["model"] = body.model
+        llm_config = LLMConfig.from_harness_config(cfg, overrides=overrides)
+
+        if not llm_config.api_key:
+            raise HTTPException(
+                status_code=503,
+                detail="No API key configured. Set OPENAI_API_KEY or configure .harness/config.yaml.",
+            )
+
+        # Build rendered prompt once for this skill
+        try:
+            rendered = _skill_mod.render_skill_prompt(body.target, base=base_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to render skill: {exc}")
+
+        def _invoke(inputs: dict[str, Any]) -> tuple[str, int, int, float]:
+            vars_dict: dict[str, str] = {k: str(v) for k, v in inputs.items()}
+            for inp in skill_data.get("inputs") or []:
+                iname = inp.get("name")
+                if iname and iname not in vars_dict and inp.get("default") is not None:
+                    vars_dict[iname] = str(inp["default"])
+            messages = build_messages(skill_data, rendered, vars_dict)
+            resp = call_llm(messages, llm_config, stream=False)
+            return resp.content, resp.input_tokens, resp.output_tokens, resp.duration
+
+        try:
+            target_label = f"{body.target}@{skill_data.get('version', 'current')}"
+            report = _eval_mod.run_eval(
+                target=target_label,
+                suite_name=name,
+                invoke_fn=_invoke,
+                base=base_path,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Eval run failed: {exc}")
+
+        return report
+
+    @api.get("/api/eval/results", summary="List recent eval results")
+    def list_eval_results(limit: int = 20) -> list[dict[str, Any]]:
+        """Return recent eval results sorted by timestamp descending."""
+        from harness_kit import eval as _eval_mod  # noqa: PLC0415
+
+        all_results = _eval_mod.load_results(base=base_path)
+        # Sort descending by timestamp, return last `limit`
+        recent = list(reversed(all_results[-limit:]))
+        return [
+            {
+                "timestamp": r.get("timestamp", ""),
+                "target": r.get("target", ""),
+                "suite": r.get("suite", ""),
+                "summary": r.get("summary", {}),
+            }
+            for r in recent
+        ]
+
+    @api.get("/api/eval/trend", summary="Get eval pass-rate trend")
+    def get_eval_trend(
+        target: str | None = None,
+        suite: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Return historical pass-rate trend data for charting."""
+        from harness_kit import eval as _eval_mod  # noqa: PLC0415
+
+        return _eval_mod.eval_trend(
+            target_filter=target,
+            suite_filter=suite,
+            base=base_path,
+            limit=limit,
+        )
+
     # ------------------------------------------------------------------
 
     # Mount static files under /static/
