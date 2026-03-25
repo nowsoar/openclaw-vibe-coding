@@ -4628,5 +4628,27 @@ def health_fix_cmd(
         raise typer.Exit(1)
 
 
+# ---------------------------------------------------------------------------
+# tui command
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def tui() -> None:
+    """Launch the interactive TUI (terminal user interface)."""
+    try:
+        from harness_kit.tui import HarnessKitApp
+    except ImportError:
+        console.print(
+            "[red]textual is not installed.[/red] "
+            "Run: [bold]pip install 'harness-kit[tui]'[/bold] or "
+            "[bold]pip install textual[/bold]"
+        )
+        raise typer.Exit(1)
+
+    app_tui = HarnessKitApp()
+    app_tui.run()
+
+
 if __name__ == "__main__":
     main()

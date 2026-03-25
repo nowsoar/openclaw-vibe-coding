@@ -2656,8 +2656,83 @@ This means `harnesskit logs tail`, `logs search`, `stats show`, and `health chec
 
 ---
 
+## Phase 7.1 — TUI 框架搭建 (TUI Framework)
+
+Phase 7.1 introduces an interactive terminal user interface (TUI) powered by [Textual](https://github.com/Textualize/textual).
+
+### Launch the TUI
+
+```bash
+harnesskit tui
+```
+
+### Layout
+
+The TUI is divided into four regions:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  HarnessKit  —  Local AI Harness Engineering Toolkit │  ← Header
+├────────────────┬────────────────────────────────────┤
+│  HarnessKit    │                                     │
+│  ──────────    │   ⚙ Skills                          │
+│  ⚙  Skills    │                                     │  ← Main
+│  🔧 Harnesses  │   可复用的 AI 能力单元。每个 Skill…  │
+│  📋 Blueprints │                                     │
+│  🧪 Eval       │                                     │
+│  📜 Logs       │                                     │
+│  💰 Cost       │                                     │
+│  🔄 Improve    │                                     │
+│  🏥 Health     │                                     │
+│  ⚙️ Settings   │                                     │
+├────────────────┴────────────────────────────────────┤
+│  j 向下   k 向上   Enter 选择   ? 帮助   q 退出       │  ← Footer
+└─────────────────────────────────────────────────────┘
+```
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move cursor down |
+| `k` / `↑` | Move cursor up |
+| `Enter` | Select / activate current item |
+| `?` | Toggle help overlay |
+| `q` | Quit |
+
+### Navigation Sections
+
+| Section | Description |
+|---------|-------------|
+| Skills | Browse skill assets and their descriptions |
+| Harnesses | View harness configurations |
+| Blueprints | Explore workflow definitions |
+| Eval | Evaluation engine overview |
+| Logs | Call log information |
+| Cost | Cost tracking overview |
+| Improve | Improvement flywheel |
+| Health | Health check status |
+| Settings | Configuration reference |
+
+### Dependencies
+
+`textual>=0.40.0` is added as a runtime dependency. It is installed automatically with `pip install harness-kit`.
+
+### Tests
+
+Phase 7.1 ships with **21 pytest tests** in `tests/test_tui.py`:
+
+| Test Category | Count | Coverage |
+|---|---|---|
+| Module import & structure | 5 | package import, callable, NAV_ITEMS |
+| App configuration | 6 | title, subtitle, bindings (q/j/k/↑↓/?) |
+| Textual pilot (async) | 9 | compose, initial state, j/k navigation, clamping, ? help overlay, arrow keys |
+| CLI integration | 1 | `tui` command registered in main app |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 6.6 complete** — Phase 6 集成与优化 — streaming log readers (deque-based tail, generator search), 28 new Phase 6 integration tests covering the full observability pipeline (logs → cost → stats → improvement → health check), all passing (1238 total).
+Current status: **Phase 7.1 complete** — TUI 框架搭建 — Textual-based interactive terminal UI with 4-region layout (Header/Sidebar/Main/Footer), Vim-style j/k navigation, help overlay, 21 new tests all passing (1259 total).

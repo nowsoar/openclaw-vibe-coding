@@ -1010,7 +1010,7 @@ Blueprint（工作流编排）
 
 **目标**：用 `textual` 实现可交互的终端界面。
 
-### Phase 7.1：TUI 框架搭建
+### Phase 7.1：TUI 框架搭建 ✅
 **任务**：
 1. 引入 `textual` 依赖
 2. 实现 `harnesskit tui` 命令入口
@@ -1018,9 +1018,9 @@ Blueprint（工作流编排）
 4. 快捷键系统（Vim 风格：j/k 上下，q 退出）
 
 **验收标准**：
-- TUI 能正常启动
-- 布局合理
-- 快捷键响应
+- ✅ TUI 能正常启动（harnesskit tui 命令 + textual>=0.40.0 依赖）
+- ✅ 布局合理（Header / Sidebar / Main / Footer 四区域）
+- ✅ 快捷键响应（j/k 上下、↑↓ 方向键、? 帮助、q 退出、Enter 选择，21 个测试全部通过）
 
 ---
 
