@@ -176,10 +176,13 @@ def _install_from_hsk(pkg_path: Path, hd: Path, base: Path | None) -> str:
         skill_name: str = manifest["skill_name"]
         skill_version: str = manifest["skill_version"]
 
+        hd_resolved = hd.resolve()
         for arc_path in zf.namelist():
             if arc_path == "manifest.json":
                 continue
-            dest = hd / arc_path
+            dest = (hd / arc_path).resolve()
+            if not str(dest).startswith(str(hd_resolved)):
+                raise ValueError(f"Zip Slip detected: {arc_path!r} escapes target directory")
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(zf.read(arc_path))
 
@@ -258,7 +261,7 @@ def _resolve_raw_url(git_url: str) -> str:
         # github:user/repo/branch/path/to/file.yaml
         rest = git_url[len("github:"):]
         parts = rest.split("/")
-        if len(parts) < 3:
+        if len(parts) < 4:
             raise ValueError(
                 "github: URL must be: github:user/repo/branch/path/to/skill.yaml"
             )

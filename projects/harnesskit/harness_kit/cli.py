@@ -1635,8 +1635,6 @@ def skill_install(
 ) -> None:
     """Install a skill from a local file or Git URL."""
     _require_init()
-    import shutil  # noqa: PLC0415
-
     src = source.strip()
 
     # Detect source type

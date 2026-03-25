@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +36,7 @@ def _load_registry() -> dict[str, Any]:
     try:
         return json.loads(f.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
+        _log.warning("Registry file %s is corrupted (invalid JSON); starting with empty registry.", f)
         return {}
 
 
