@@ -873,7 +873,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 5.6：评估系统集成
+### Phase 5.6：评估系统集成 ✅
 **任务**：
 1. 与 Harness 集成
    - `harnesskit harness create --eval-suite suite-name`
@@ -889,8 +889,8 @@ Blueprint（工作流编排）
    - 显示成功率趋势（命令行简单图表）
 
 **验收标准**：
-- CI 集成可用
-- 趋势数据正确
+- ✅ CI 集成可用
+- ✅ 趋势数据正确
 
 ---
 

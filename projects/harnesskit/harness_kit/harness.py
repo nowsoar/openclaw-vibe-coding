@@ -135,6 +135,7 @@ def save_harness(
     constraints: dict[str, Any] | None = None,
     context_budget: int | None = None,
     changelog: str = "",
+    eval_suite: str | None = None,
     base: Path | None = None,
 ) -> tuple[str, bool]:
     """Save (or update) a harness. Returns (new_version, is_new_harness)."""
@@ -165,6 +166,8 @@ def save_harness(
         "changelog": changelog,
         "created_at": datetime.now(tz=timezone.utc).isoformat(),
     }
+    if eval_suite:
+        data["eval_suite"] = eval_suite
 
     with _version_file(name, new_version, base).open("w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
@@ -191,6 +194,7 @@ def save_harness_from_dict(
         constraints=data.get("constraints"),
         context_budget=data.get("context_budget"),
         changelog=data.get("changelog", ""),
+        eval_suite=data.get("eval_suite") or None,
         base=base,
     )
 

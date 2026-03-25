@@ -1641,6 +1641,7 @@ def harness_create(
     max_turns: int = typer.Option(10, "--max-turns", help="Max conversation turns before compressing."),
     context_budget: int = typer.Option(4000, "--context-budget", help="Context token budget."),
     changelog: str = typer.Option("", "--changelog", help="Changelog note for this version."),
+    eval_suite: str = typer.Option("", "--eval-suite", help="Bind a test suite name to this harness (run with eval run)."),
 ) -> None:
     """Create or update a harness. Accepts --file <yaml> or individual options."""
     _require_init()
@@ -1656,6 +1657,8 @@ def harness_create(
             raise typer.Exit(1)
         # Override name from argument if provided
         data["name"] = name
+        if eval_suite:
+            data["eval_suite"] = eval_suite
         errors = _harness_mod._validate_harness_data(data)
         if errors:
             console.print("[red]✗ Harness definition errors:[/red]")
@@ -1683,6 +1686,8 @@ def harness_create(
             "context_budget": context_budget,
             "changelog": changelog,
         }
+        if eval_suite:
+            data["eval_suite"] = eval_suite
         errors = _harness_mod._validate_harness_data(data)
         if errors:
             console.print("[red]✗ Harness definition errors:[/red]")
@@ -1693,6 +1698,8 @@ def harness_create(
 
     action = "[green]✓ Created[/green]" if is_new else "[blue]↑ Updated[/blue]"
     console.print(f"{action} harness [bold]{name}[/bold] → [cyan]{version}[/cyan]")
+    if eval_suite:
+        console.print(f"  [dim]eval-suite bound: {eval_suite}[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -3347,6 +3354,10 @@ def eval_run(
         False, "--ci",
         help="CI mode: exit with non-zero code when any test case fails.",
     ),
+    junit_xml: Optional[Path] = typer.Option(
+        None, "--junit-xml",
+        help="Write JUnit XML report to this path (for CI systems).",
+    ),
 ) -> None:
     """Run a test suite against a skill and generate an evaluation report."""
     _require_init()
@@ -3478,6 +3489,10 @@ def eval_run(
     )
     if result_file:
         console.print(f"[dim]Report saved: {result_file}[/dim]")
+
+    if junit_xml:
+        _eval_mod.generate_junit_xml(report, junit_xml)
+        console.print(f"[dim]JUnit XML: {junit_xml}[/dim]")
 
     if ci and failed > 0:
         raise typer.Exit(1)
@@ -3840,6 +3855,113 @@ def eval_benchmark(
         any_failures = any(e["metrics"]["failed"] > 0 for e in entries)
         if any_failures:
             raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# eval trend  (Phase 5.6 — historical success-rate trend)
+# ---------------------------------------------------------------------------
+
+
+@eval_app.command("trend")
+def eval_trend(
+    target: Optional[str] = typer.Argument(
+        None,
+        help="Target name filter (substring match), e.g. 'my-skill'.",
+    ),
+    suite: Optional[str] = typer.Option(
+        None, "--suite", "-s",
+        help="Filter by exact suite name.",
+    ),
+    limit: int = typer.Option(
+        20, "--limit", "-n",
+        help="Maximum number of recent results to display.",
+    ),
+) -> None:
+    """Show historical pass-rate trend for past eval runs."""
+    _require_init()
+
+    entries = _eval_mod.eval_trend(
+        target_filter=target,
+        suite_filter=suite,
+        limit=limit,
+    )
+
+    if not entries:
+        console.print("[dim]No eval results found. Run [bold]harnesskit eval run[/bold] first.[/dim]")
+        return
+
+    # ── Summary table ──────────────────────────────────────────────────────
+    table = Table(title="Eval History Trend", show_lines=False)
+    table.add_column("#", style="dim", justify="right")
+    table.add_column("Timestamp", style="cyan")
+    table.add_column("Target")
+    table.add_column("Suite")
+    table.add_column("Pass Rate", justify="right")
+    table.add_column("Passed", justify="right")
+    table.add_column("Total", justify="right")
+    table.add_column("Trend", justify="left")
+
+    prev_rate: Optional[float] = None
+    for i, entry in enumerate(entries, 1):
+        rate = entry["pass_rate"]
+        rate_pct = f"{rate * 100:.1f}%"
+        color = "green" if rate >= 1.0 else ("yellow" if rate >= 0.5 else "red")
+
+        # Trend arrow vs previous
+        if prev_rate is None:
+            arrow = ""
+        elif rate > prev_rate:
+            arrow = "[green]↑[/green]"
+        elif rate < prev_rate:
+            arrow = "[red]↓[/red]"
+        else:
+            arrow = "[dim]→[/dim]"
+        prev_rate = rate
+
+        # Short timestamp (strip microseconds / timezone for display)
+        ts = entry["timestamp"]
+        ts_display = ts[:19].replace("T", " ") if ts else "—"
+
+        table.add_row(
+            str(i),
+            ts_display,
+            entry["target"],
+            entry["suite"],
+            f"[{color}]{rate_pct}[/{color}]",
+            str(entry["passed"]),
+            str(entry["total"]),
+            arrow,
+        )
+
+    console.print(table)
+
+    # ── ASCII sparkline chart ──────────────────────────────────────────────
+    rates = [e["pass_rate"] for e in entries]
+    if len(rates) >= 2:
+        console.print("\n[bold]Pass-Rate Chart[/bold] (each bar = one run)\n")
+        bar_chars = " ▁▂▃▄▅▆▇█"
+        chart_rows = 4
+        chart_width = len(rates)
+        # Normalize rates to bar characters
+        bars: list[str] = []
+        for r in rates:
+            idx = min(int(r * (len(bar_chars) - 1)), len(bar_chars) - 1)
+            color = "green" if r >= 1.0 else ("yellow" if r >= 0.5 else "red")
+            bars.append(f"[{color}]{bar_chars[idx]}[/{color}]")
+        console.print("  " + "".join(bars))
+        console.print(f"  [dim]{'─' * chart_width}[/dim]")
+        padding = max(0, chart_width - 4)
+        console.print(f"  [dim]0%{' ' * padding}100%[/dim]")
+        console.print()
+
+    # ── Latest stats ──────────────────────────────────────────────────────
+    last = entries[-1]
+    avg_rate = sum(e["pass_rate"] for e in entries) / len(entries)
+    console.print(
+        f"[bold]Latest:[/bold] [cyan]{last['pass_rate'] * 100:.1f}%[/cyan]  "
+        f"[bold]Avg:[/bold] [cyan]{avg_rate * 100:.1f}%[/cyan]  "
+        f"[dim]({len(entries)} runs shown)[/dim]"
+    )
 
 
 if __name__ == "__main__":

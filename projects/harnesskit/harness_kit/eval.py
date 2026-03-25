@@ -1,10 +1,11 @@
-"""Eval system — Test Suite data model, storage, and runner (Phase 5.1/5.3)."""
+"""Eval system — Test Suite data model, storage, and runner (Phase 5.1/5.3/5.6)."""
 
 from __future__ import annotations
 
 import json
 import re
 import time as _time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -491,3 +492,152 @@ def benchmark_evals(reports: list[dict[str, Any]]) -> dict[str, Any]:
         "entries": entries,
         "best_model": best_model,
     }
+
+
+# ---------------------------------------------------------------------------
+# JUnit XML report generation (Phase 5.6 — CI integration)
+# ---------------------------------------------------------------------------
+
+
+def generate_junit_xml(report: dict[str, Any], output_path: Path) -> None:
+    """Write a JUnit-compatible XML report from an eval result.
+
+    Parameters
+    ----------
+    report:
+        A report dict returned by :func:`run_eval`.
+    output_path:
+        Destination file path (will be created/overwritten).
+    """
+    cases = report.get("cases") or []
+    summary = report.get("summary", {})
+    total = summary.get("total", len(cases))
+    failed = summary.get("failed", 0)
+    errors = sum(1 for c in cases if c.get("status") == "error")
+    total_duration = sum(c.get("duration", 0.0) for c in cases)
+    target = report.get("target", "unknown")
+    suite_name = report.get("suite", "eval")
+
+    # Build XML tree
+    testsuites = ET.Element(
+        "testsuites",
+        name=target,
+        tests=str(total),
+        failures=str(max(0, failed - errors)),
+        errors=str(errors),
+        time=f"{total_duration:.3f}",
+    )
+
+    testsuite = ET.SubElement(
+        testsuites,
+        "testsuite",
+        name=f"{target} / {suite_name}",
+        tests=str(total),
+        failures=str(max(0, failed - errors)),
+        errors=str(errors),
+        time=f"{total_duration:.3f}",
+        timestamp=report.get("timestamp", ""),
+    )
+
+    for case in cases:
+        tc = ET.SubElement(
+            testsuite,
+            "testcase",
+            name=case.get("name", case.get("id", "?")),
+            classname=f"{target}.{suite_name}",
+            time=f"{case.get('duration', 0.0):.3f}",
+        )
+
+        status = case.get("status", "error")
+        if status == "error":
+            error_el = ET.SubElement(tc, "error", message=case.get("error", "Unknown error"))
+            error_el.text = case.get("error", "")
+        elif status == "failed":
+            # Collect failing assertions
+            fail_msgs = [
+                a.get("message", "")
+                for a in (case.get("assertions") or [])
+                if not a.get("passed")
+            ]
+            msg = "; ".join(fail_msgs) if fail_msgs else "Assertions failed"
+            failure_el = ET.SubElement(tc, "failure", message=msg)
+            failure_el.text = "\n".join(fail_msgs)
+
+    # Write to file
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tree = ET.ElementTree(testsuites)
+    ET.indent(tree, space="  ")
+    with output_path.open("wb") as fh:
+        tree.write(fh, encoding="utf-8", xml_declaration=True)
+
+
+# ---------------------------------------------------------------------------
+# Historical trend (Phase 5.6 — trend analysis)
+# ---------------------------------------------------------------------------
+
+
+def load_results(base: Path | None = None) -> list[dict[str, Any]]:
+    """Load all persisted eval result files, sorted by timestamp ascending."""
+    rdir = results_dir(base)
+    if not rdir.exists():
+        return []
+    results = []
+    for p in sorted(rdir.glob("*.json")):
+        try:
+            with p.open("r", encoding="utf-8") as fh:
+                results.append(json.load(fh))
+        except Exception:
+            pass
+    return results
+
+
+def eval_trend(
+    target_filter: str | None = None,
+    suite_filter: str | None = None,
+    base: Path | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Compute historical pass-rate trend from saved eval results.
+
+    Parameters
+    ----------
+    target_filter:
+        Optional substring filter on the ``target`` field (e.g. ``'my-skill'``).
+    suite_filter:
+        Optional exact match on the ``suite`` field.
+    base:
+        Optional path override for the ``.harness/`` root.
+    limit:
+        Maximum number of most-recent results to return.
+
+    Returns
+    -------
+    list of dicts, each with keys: timestamp, target, suite, pass_rate, passed, total
+    """
+    all_results = load_results(base)
+
+    filtered: list[dict[str, Any]] = []
+    for r in all_results:
+        target = r.get("target", "")
+        suite = r.get("suite", "")
+        if target_filter and target_filter.lower() not in target.lower():
+            continue
+        if suite_filter and suite != suite_filter:
+            continue
+        summary = r.get("summary", {})
+        total = summary.get("total", 0)
+        passed = summary.get("passed", 0)
+        pass_rate = round(passed / total, 4) if total > 0 else 0.0
+        filtered.append(
+            {
+                "timestamp": r.get("timestamp", ""),
+                "target": target,
+                "suite": suite,
+                "pass_rate": pass_rate,
+                "passed": passed,
+                "total": total,
+            }
+        )
+
+    # Return the most recent `limit` entries
+    return filtered[-limit:]

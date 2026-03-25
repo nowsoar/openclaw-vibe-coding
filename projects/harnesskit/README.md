@@ -2014,6 +2014,119 @@ for entry in bench["entries"]:
 
 ---
 
+## Phase 5.6 — Eval System Integration
+
+Phase 5.6 completes the evaluation engine with three features: **Harness eval-suite binding**, **CI mode with JUnit XML reports**, and **historical pass-rate trend analysis**.
+
+### Harness Eval-Suite Binding
+
+Bind a test suite to a harness at creation time so the relationship is stored in the harness YAML:
+
+```bash
+# Create a harness and bind a test suite to it
+harnesskit harness create my-harness \
+  --description "Production code reviewer" \
+  --skills code-reviewer \
+  --eval-suite code-review-suite
+
+# The eval_suite field is stored in the harness YAML
+harnesskit harness show my-harness
+```
+
+The `eval_suite` field is persisted in `.harness/harnesses/my-harness/vX.Y.Z.yaml`:
+
+```yaml
+name: my-harness
+version: v0.1.0
+description: Production code reviewer
+skills:
+  - code-reviewer
+eval_suite: code-review-suite
+...
+```
+
+### CI Mode with JUnit XML
+
+Use `--ci` to fail the process with exit code 1 when any test case fails (ideal for CI pipelines):
+
+```bash
+# Exit code 0 = all passed, exit code 1 = any failures
+harnesskit eval run my-skill --suite my-suite --ci
+
+# Also generate a JUnit XML report (consumed by Jenkins, GitHub Actions, etc.)
+harnesskit eval run my-skill --suite my-suite --ci --junit-xml results/junit.xml
+```
+
+The JUnit XML follows the standard `<testsuites>/<testsuite>/<testcase>` format with `<failure>` and `<error>` elements for failed/errored cases.
+
+**GitHub Actions example:**
+
+```yaml
+- name: Run eval
+  run: harnesskit eval run my-skill --suite my-suite --ci --junit-xml results/junit.xml
+- name: Publish test results
+  uses: dorny/test-reporter@v1
+  if: always()
+  with:
+    name: Eval Results
+    path: results/junit.xml
+    reporter: java-junit
+```
+
+### Historical Trend Analysis
+
+`harnesskit eval trend` reads all saved eval results from `.harness/evals/results/` and displays a pass-rate trend table with an ASCII sparkline chart:
+
+```bash
+# Show all eval history
+harnesskit eval trend
+
+# Filter by target name (substring match)
+harnesskit eval trend my-skill
+
+# Filter by suite
+harnesskit eval trend --suite code-review-suite
+
+# Limit to last N runs
+harnesskit eval trend --limit 10
+```
+
+Example output:
+
+```
+              Eval History Trend
+ # │ Timestamp           │ Target               │ Suite            │ Pass Rate │ Passed │ Total │ Trend
+───┼─────────────────────┼──────────────────────┼──────────────────┼───────────┼────────┼───────┼──────
+ 1 │ 2026-01-01 12:00:00 │ my-skill@v0.1.0      │ code-review-…    │      60.0%│      3 │     5 │
+ 2 │ 2026-01-03 14:30:00 │ my-skill@v0.2.0      │ code-review-…    │      80.0%│      4 │     5 │ ↑
+ 3 │ 2026-01-05 09:15:00 │ my-skill@v0.2.1      │ code-review-…    │     100.0%│      5 │     5 │ ↑
+
+Pass-Rate Chart (each bar = one run)
+
+  ▅▇█
+  ───
+  0%100%
+
+Latest: 100.0%  Avg: 80.0%  (3 runs shown)
+```
+
+### Python API
+
+```python
+from harness_kit.eval import generate_junit_xml, eval_trend
+
+# Generate JUnit XML from a run_eval report
+report = run_eval(target="my-skill@v0.1.0", suite_name="my-suite", invoke_fn=invoke_fn)
+generate_junit_xml(report, Path("results/junit.xml"))
+
+# Get trend data programmatically
+entries = eval_trend(target_filter="my-skill", suite_filter="my-suite", limit=20)
+for entry in entries:
+    print(f"{entry['timestamp']}: {entry['pass_rate']:.0%}")
+```
+
+---
+
 ## Version References
 
 All versioned assets (prompts, schemas, contexts) support `name@version` syntax:
@@ -2049,4 +2162,4 @@ pytest tests/test_phase3_integration.py -v  # Phase 3 end-to-end
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 5.5 complete** — Eval Engine: Multi-model Benchmark — `harnesskit eval benchmark <skill> --suite <suite> --models "gpt-4o,claude-3-5,deepseek-v3"` runs the same skill across multiple LLM models, shows a per-model benchmark table (pass rate, tokens, duration) with ★ winner, per-case result grid, and best-model recommendation. `benchmark_evals` Python API also available. 19 new pytest tests (all passing, 1019 total).
+Current status: **Phase 5.6 complete** — Eval System Integration — Harness eval-suite binding (`--eval-suite`), CI mode with JUnit XML (`--ci --junit-xml`), and historical pass-rate trend (`harnesskit eval trend`). 21 new pytest tests (all passing, 1040 total).
