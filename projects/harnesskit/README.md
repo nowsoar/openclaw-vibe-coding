@@ -2731,8 +2731,76 @@ Phase 7.1 ships with **21 pytest tests** in `tests/test_tui.py`:
 
 ---
 
+## Phase 7.2 — Skill 浏览器 (Skill Browser)
+
+Phase 7.2 adds an interactive Skill browser inside the TUI — a dedicated
+`SkillBrowserScreen` that lets you explore, search, and take action on every
+Skill registered in your `.harness/` directory.
+
+### Open the Skill Browser
+
+```
+harnesskit tui          # launch TUI
+# Navigate to ⚙  Skills and press Enter
+```
+
+### Layout
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ HarnessKit                                    Skill 浏览器               │
+├──────────────────┬──────────────────────────────────────────────────────┤
+│ ⚙  Skills        │  code-reviewer   v0.1.0                              │
+│ ──────────────── │                                                       │
+│ 搜索 Skill…      │  描述：审查代码，输出问题列表                        │
+│                  │  触发条件：当需要审查代码时                          │
+│  code-reviewer   │                                                       │
+│  summarizer      │  输入参数：                                          │
+│  explainer       │    * code  (string)                                  │
+│                  │      lang  (string)  (默认: auto)                    │
+│                  │                                                       │
+│                  │  快捷操作：                                          │
+│                  │    r  运行  → harnesskit skill run code-reviewer      │
+│                  │    d  对比  → harnesskit skill diff code-reviewer@…   │
+│                  │    e  编辑  → harnesskit skill save --file <…>        │
+├──────────────────┴──────────────────────────────────────────────────────┤
+│ Esc 返回  j 向下  k 向上  r 运行  d Diff  e 编辑                        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move selection down |
+| `k` / `↑` | Move selection up |
+| `r` | Show `harnesskit skill run <name>` command |
+| `d` | Show `harnesskit skill diff` command |
+| `e` | Show `harnesskit skill save --file` command |
+| `Esc` | Return to main navigation |
+
+### Search & Filter
+
+Type in the search box at the top of the left pane to filter skills
+by name or description in real time.
+
+### Tests
+
+Phase 7.2 ships with **27 pytest tests** in `tests/test_tui_skill_browser.py`:
+
+| Test Category | Count | Coverage |
+|---|---|---|
+| Module import & structure | 2 | package import, tui export |
+| Formatter unit tests | 5 | detail text, inputs, outputs, assets, command hints |
+| Binding configuration | 4 | escape, j/k, r/d/e |
+| Instantiation | 2 | basic, base_path injection |
+| Textual pilot (async) | 13 | compose, empty state, skill listing, detail, j/k nav, clamping, search filter, r/d/e notices, dismiss notice |
+| Main app integration | 1 | Enter on Skills nav → SkillBrowserScreen pushed |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 7.1 complete** — TUI 框架搭建 — Textual-based interactive terminal UI with 4-region layout (Header/Sidebar/Main/Footer), Vim-style j/k navigation, help overlay, 21 new tests all passing (1259 total).
+Current status: **Phase 7.2 complete** — Skill 浏览器 — interactive Skill browser with real-time search/filter, two-pane layout (list + detail), r/d/e action hints, notice overlay, Esc back navigation; 27 new tests all passing (1286 total).

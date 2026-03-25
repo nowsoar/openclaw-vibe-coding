@@ -8,6 +8,8 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
+from harness_kit.tui.skill_browser import SkillBrowserScreen
+
 
 # ---------------------------------------------------------------------------
 # Navigation items definition
@@ -176,11 +178,17 @@ class HelpOverlay(Container):
         with Container():
             yield Label("[bold yellow]键盘快捷键[/bold yellow]")
             yield Label("")
-            yield Label("[cyan]j / ↓[/cyan]   向下移动")
-            yield Label("[cyan]k / ↑[/cyan]   向上移动")
-            yield Label("[cyan]Enter[/cyan]   进入 / 选择")
-            yield Label("[cyan]?[/cyan]       显示 / 关闭帮助")
-            yield Label("[cyan]q[/cyan]       退出 HarnessKit TUI")
+            yield Label("[cyan]j / ↓[/cyan]    向下移动")
+            yield Label("[cyan]k / ↑[/cyan]    向上移动")
+            yield Label("[cyan]Enter[/cyan]    进入 / 选择  （Skills → Skill 浏览器）")
+            yield Label("[cyan]Esc[/cyan]      返回上一屏")
+            yield Label("[cyan]?[/cyan]        显示 / 关闭帮助")
+            yield Label("[cyan]q[/cyan]        退出 HarnessKit TUI")
+            yield Label("")
+            yield Label("[bold]Skill 浏览器快捷键[/bold]")
+            yield Label("[cyan]r[/cyan]        运行 Skill（显示命令）")
+            yield Label("[cyan]d[/cyan]        对比版本（显示命令）")
+            yield Label("[cyan]e[/cyan]        编辑 Skill（显示命令）")
             yield Label("")
             yield Label("[dim]按任意键关闭[/dim]")
 
@@ -279,8 +287,29 @@ class HarnessKitApp(App):
         self._update_content(prev_idx)
 
     def action_select_item(self) -> None:
-        """Activate the currently highlighted nav item (highlights it)."""
-        self._update_content(self._selected_index)
+        """Activate the currently highlighted nav item.
+
+        Pressing Enter on the *Skills* section opens the dedicated
+        :class:`SkillBrowserScreen`; all other sections simply refresh
+        the description in the content panel.
+        """
+        idx = self._selected_index
+        if 0 <= idx < len(NAV_ITEMS):
+            item_id = NAV_ITEMS[idx][0]
+            if item_id == "skills":
+                self.push_screen(SkillBrowserScreen())
+                return
+        self._update_content(idx)
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Handle list item selection (triggered by Enter in the ListView).
+
+        The ListView consumes the Enter key to fire this event before the
+        App-level binding runs.  We use it to navigate into the Skill browser.
+        """
+        idx = self._selected_index
+        if 0 <= idx < len(NAV_ITEMS) and NAV_ITEMS[idx][0] == "skills":
+            self.push_screen(SkillBrowserScreen())
 
     def action_toggle_help(self) -> None:
         self._help_visible = not self._help_visible
