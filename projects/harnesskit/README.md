@@ -3206,8 +3206,83 @@ Phase 8.2 ships with **44 new pytest tests** in `tests/test_web_frontend.py`:
 
 ---
 
+## Phase 8.3 — Prompt Playground
+
+Phase 8.3 transforms the Skills page into a fully interactive **Prompt Playground** —
+a split-panel interface where you can select any Skill, fill its inputs, choose a model,
+run it against the LLM, and immediately see the output alongside token stats.
+
+### Using the Playground
+
+```bash
+# Start the web server
+harnesskit serve
+
+# Then open http://localhost:7749 in your browser
+# → Click the "Skills" nav item (loaded by default)
+# → Select any skill from the left panel
+# → Fill the input form (generated dynamically from the skill's `inputs` definition)
+# → Optionally override the model (e.g. "gpt-4o", "claude-3-5-sonnet")
+# → Click ▶ Run
+# → Output appears below with model, token counts, and duration
+```
+
+### Playground UI layout
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Skills Playground                       3 skill(s)      │
+│  [Filter skills…]                                        │
+├──────────────────┬──────────────────────────────────────┤
+│  translate v0.1  │  translate                v0.0.1      │
+│  ping v0.0.1     │  Translate text to another language   │
+│                  │                                        │
+│                  │  Inputs                               │
+│                  │  text * — string                      │
+│                  │  ┌──────────────────────────────┐    │
+│                  │  │ Enter text…                  │    │
+│                  │  └──────────────────────────────┘    │
+│                  │  target_lang (optional)               │
+│                  │  ┌──────────────────────────────┐    │
+│                  │  │ English                      │    │
+│                  │  └──────────────────────────────┘    │
+│                  │  Model                                │
+│                  │  [gpt-4o or leave blank for default]  │
+│                  │  [ ▶ Run ]                            │
+│                  │                                        │
+│                  │  Output            gpt-4o  60 tok  1s │
+│                  │  ┌──────────────────────────────┐    │
+│                  │  │ Hello World in English…      │    │
+│                  │  └──────────────────────────────┘    │
+└──────────────────┴──────────────────────────────────────┘
+```
+
+### Key features
+
+| Feature | Detail |
+|---------|--------|
+| Dynamic input form | Auto-generated from `skill.inputs` — required/optional labels, type hints, pre-filled defaults |
+| Model selector | Free-text input; leave blank to use `.harness/config.yaml` default |
+| Live run | Calls `POST /api/skills/{name}/run`; shows spinner while waiting |
+| Output panel | Rendered `<pre>` block; token counts (in/out) and duration shown |
+| Error display | Missing required inputs → 422 detail; LLM failure → 502 message |
+| Skill selector | Left sidebar with search/filter; active skill highlighted |
+
+### Phase 8.3 test coverage
+
+Phase 8.3 ships with **47 pytest tests** in `tests/test_web_playground.py`:
+
+| Class | Tests | What is verified |
+|-------|-------|-----------------|
+| `TestPlaygroundHTMLStructure` | 19 | form, model selector, run button, output area, Alpine functions, API references, template loop, token stats, `<pre>` element, static file |
+| `TestSkillDetailAPI` | 8 | `inputs` field present, required flag, default value, empty inputs list, 404, description, version |
+| `TestRunSkillPlayground` | 14 | 404 missing skill, 422 missing required input, 503 no API key, 200 success, output/model/tokens/duration/skill-name fields, model override, optional default filled, no-inputs skill, 502 LLM failure |
+| `TestBackwardsCompat` | 6 | Phase 8.1/8.2 API and partials still work |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 8.2 complete** — 前端框架搭建 — HTMX + Alpine.js + TailwindCSS CDN frontend with 5-section navigation, HTMX dynamic partial loading, Alpine.js reactive skills list, and static file serving; 44 new tests all passing (66 total for Phase 8).
+Current status: **Phase 8.3 complete** — Prompt Playground — interactive split-panel UI with dynamic input forms generated from skill definitions, model selector, live LLM run, and output display with token stats; 47 new tests all passing (113 total for Phase 8).

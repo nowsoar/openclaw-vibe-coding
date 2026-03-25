@@ -1,9 +1,9 @@
-<!-- Skills partial — loaded by HTMX into #content -->
-<div x-data="skillsSection()" x-init="load()" class="max-w-4xl">
+<!-- Skills Playground — Phase 8.3 — loaded by HTMX into #content -->
+<div x-data="skillsSection()" x-init="load()" class="max-w-6xl">
 
   <!-- Header row -->
   <div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-bold text-gray-900">Skills</h1>
+    <h1 class="text-2xl font-bold text-gray-900">Skills Playground</h1>
     <span class="text-sm text-gray-500" x-text="items.length + ' skill(s) registered'"></span>
   </div>
 
@@ -39,46 +39,175 @@
     <p class="text-sm mt-1">Run <code class="bg-gray-100 px-1 rounded">harnesskit skill save --file skill.yaml</code> to add one.</p>
   </div>
 
-  <!-- Skills grid -->
-  <div x-show="!loading && !error && filtered.length > 0"
-       class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-    <template x-for="s in filtered" :key="s.name">
-      <div class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
-        <div class="flex items-start justify-between mb-2">
-          <h3 class="font-semibold text-gray-900 text-sm" x-text="s.name"></h3>
-          <span class="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-mono"
-                x-text="s.version || 'n/a'"></span>
-        </div>
-        <p class="text-xs text-gray-500 line-clamp-2" x-text="s.description || 'No description'"></p>
-        <div class="mt-3 flex gap-2" x-show="s.trigger">
-          <span class="text-xs text-gray-400 italic truncate" x-text="'Trigger: ' + s.trigger"></span>
-        </div>
-        <div class="mt-3 pt-3 border-t border-gray-100 flex gap-2">
-          <button
-            class="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-500 transition"
-            :hx-get="'/api/skills/' + s.name"
-            hx-target="#skill-detail"
-            hx-swap="innerHTML"
-            @click="selected = s.name"
-          >Details</button>
-        </div>
-      </div>
-    </template>
-  </div>
+  <!-- Two-column layout: skill list + playground panel -->
+  <div x-show="!loading && !error && filtered.length > 0" class="flex gap-6">
 
-  <!-- Skill detail panel -->
-  <div id="skill-detail" class="mt-6"></div>
+    <!-- Left: Skills list -->
+    <div class="w-64 flex-shrink-0 flex flex-col gap-2" id="skill-list">
+      <template x-for="s in filtered" :key="s.name">
+        <div
+          @click="openPlayground(s.name)"
+          class="bg-white rounded-lg border px-4 py-3 cursor-pointer transition-colors"
+          :class="pg.skillName === s.name
+            ? 'border-indigo-400 bg-indigo-50 shadow-sm'
+            : 'border-gray-200 hover:border-indigo-200 hover:bg-gray-50'"
+        >
+          <div class="flex items-center justify-between mb-1">
+            <h3 class="font-semibold text-gray-900 text-sm truncate" x-text="s.name"></h3>
+            <span class="text-xs bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-mono flex-shrink-0 ml-1"
+                  x-text="s.version || 'n/a'"></span>
+          </div>
+          <p class="text-xs text-gray-500 line-clamp-2" x-text="s.description || 'No description'"></p>
+        </div>
+      </template>
+    </div>
+
+    <!-- Right: Playground panel -->
+    <div class="flex-1 min-w-0" id="skill-playground">
+
+      <!-- Prompt when nothing selected -->
+      <div x-show="!pg.skillName" class="flex flex-col items-center justify-center py-24 text-gray-400">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <p class="font-medium text-sm">Select a skill to open the playground</p>
+      </div>
+
+      <!-- Playground loading -->
+      <div x-show="pg.skillName && pg.loading" class="flex items-center gap-2 text-gray-400 py-10">
+        <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        Loading skill details…
+      </div>
+
+      <!-- Playground error -->
+      <div x-show="pg.loadError"
+           class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm"
+           x-text="pg.loadError"></div>
+
+      <!-- Playground content -->
+      <div x-show="pg.skillName && !pg.loading && !pg.loadError && pg.detail"
+           class="bg-white rounded-lg border border-gray-200 p-6">
+
+        <!-- Skill header -->
+        <div class="flex items-start justify-between mb-5">
+          <div>
+            <h2 class="text-lg font-bold text-gray-900" x-text="pg.detail && pg.detail.name"></h2>
+            <p class="text-sm text-gray-500 mt-0.5" x-text="pg.detail && pg.detail.description"></p>
+          </div>
+          <span class="text-sm bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono flex-shrink-0 ml-4"
+                x-text="pg.detail && pg.detail.version"></span>
+        </div>
+
+        <!-- Input form -->
+        <div class="mb-5" id="playground-input-form">
+          <h3 class="text-sm font-semibold text-gray-700 mb-3">Inputs</h3>
+
+          <div x-show="!pg.detail || !pg.detail.inputs || pg.detail.inputs.length === 0"
+               class="text-sm text-gray-400 italic">No inputs required for this skill.</div>
+
+          <template x-for="inp in (pg.detail && pg.detail.inputs || [])" :key="inp.name">
+            <div class="mb-3">
+              <label class="block text-xs font-medium text-gray-600 mb-1">
+                <span x-text="inp.name"></span>
+                <span x-show="inp.required !== false" class="text-red-500 ml-0.5">*</span>
+                <span x-show="inp.required === false" class="text-gray-400 ml-1">(optional)</span>
+                <span x-show="inp.type" class="text-gray-400 font-normal ml-1" x-text="'— ' + inp.type"></span>
+              </label>
+              <textarea
+                :id="'input-' + inp.name"
+                :name="inp.name"
+                x-model="pg.inputs[inp.name]"
+                :placeholder="inp.default !== undefined ? String(inp.default) : ('Enter ' + inp.name + '…')"
+                rows="3"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
+              ></textarea>
+            </div>
+          </template>
+        </div>
+
+        <!-- Model selector -->
+        <div class="mb-5" id="playground-model-selector">
+          <label class="block text-xs font-semibold text-gray-700 mb-1">Model</label>
+          <input
+            type="text"
+            x-model="pg.model"
+            placeholder="e.g. gpt-4o, claude-3-5-sonnet (blank = default)"
+            class="w-full max-w-sm px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        <!-- Run button -->
+        <button
+          id="playground-run-btn"
+          @click="runSkill()"
+          :disabled="pg.running"
+          class="inline-flex items-center gap-2 bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <svg x-show="!pg.running" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7L8 5z"/>
+          </svg>
+          <svg x-show="pg.running" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          <span x-text="pg.running ? 'Running…' : '▶ Run'"></span>
+        </button>
+
+        <!-- Run error -->
+        <div x-show="pg.runError"
+             class="mt-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm"
+             x-text="pg.runError"
+             id="playground-run-error"></div>
+
+        <!-- Output area -->
+        <div x-show="pg.result" class="mt-5" id="playground-output">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-semibold text-gray-700">Output</h3>
+            <div class="flex gap-3 text-xs text-gray-400">
+              <span x-text="'Model: ' + (pg.result && pg.result.model)"></span>
+              <span x-text="'Tokens in: ' + (pg.result && pg.result.input_tokens)"></span>
+              <span x-text="'Tokens out: ' + (pg.result && pg.result.output_tokens)"></span>
+              <span x-text="'Duration: ' + (pg.result && pg.result.duration.toFixed(2)) + 's'"></span>
+            </div>
+          </div>
+          <pre
+            x-text="pg.result && pg.result.output"
+            class="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm whitespace-pre-wrap font-mono leading-relaxed max-h-96 overflow-y-auto"
+          ></pre>
+        </div>
+
+      </div>
+    </div>
+  </div>
 
 </div>
 
 <script>
 function skillsSection() {
   return {
+    // Skill list state
     items: [],
     loading: true,
     error: null,
     query: '',
-    selected: null,
+
+    // Playground state
+    pg: {
+      skillName: null,
+      loading: false,
+      loadError: null,
+      detail: null,
+      inputs: {},
+      model: '',
+      running: false,
+      runError: null,
+      result: null,
+    },
+
     get filtered() {
       if (!this.query) return this.items;
       const q = this.query.toLowerCase();
@@ -87,6 +216,7 @@ function skillsSection() {
         (s.description || '').toLowerCase().includes(q)
       );
     },
+
     async load() {
       this.loading = true;
       this.error = null;
@@ -99,7 +229,67 @@ function skillsSection() {
       } finally {
         this.loading = false;
       }
-    }
-  }
+    },
+
+    async openPlayground(name) {
+      if (this.pg.skillName === name) return;
+      this.pg.skillName = name;
+      this.pg.loading = true;
+      this.pg.loadError = null;
+      this.pg.detail = null;
+      this.pg.inputs = {};
+      this.pg.model = '';
+      this.pg.runError = null;
+      this.pg.result = null;
+      try {
+        const res = await fetch('/api/skills/' + encodeURIComponent(name));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const detail = await res.json();
+        this.pg.detail = detail;
+        // Pre-fill defaults
+        for (const inp of (detail.inputs || [])) {
+          if (inp.default !== undefined && inp.default !== null) {
+            this.pg.inputs[inp.name] = String(inp.default);
+          }
+        }
+      } catch (e) {
+        this.pg.loadError = 'Failed to load skill details: ' + e.message;
+      } finally {
+        this.pg.loading = false;
+      }
+    },
+
+    async runSkill() {
+      if (!this.pg.skillName || this.pg.running) return;
+      this.pg.running = true;
+      this.pg.runError = null;
+      this.pg.result = null;
+      const body = {
+        inputs: Object.fromEntries(
+          Object.entries(this.pg.inputs).filter(([, v]) => v !== '')
+        ),
+      };
+      if (this.pg.model.trim()) {
+        body.model = this.pg.model.trim();
+      }
+      try {
+        const res = await fetch('/api/skills/' + encodeURIComponent(this.pg.skillName) + '/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          this.pg.runError = data.detail || `HTTP ${res.status}`;
+        } else {
+          this.pg.result = data;
+        }
+      } catch (e) {
+        this.pg.runError = 'Request failed: ' + e.message;
+      } finally {
+        this.pg.running = false;
+      }
+    },
+  };
 }
 </script>

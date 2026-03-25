@@ -1131,7 +1131,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 8.3：Prompt Playground
+### Phase 8.3：Prompt Playground ✅
 **任务**：
 1. 前端界面：
    - 左侧：变量输入表单（根据 Skill inputs 动态生成）
@@ -1144,8 +1144,9 @@ Blueprint（工作流编排）
    - 渲染输出结果
 
 **验收标准**：
-- 表单能根据 Skill 定义动态生成
-- 能成功运行并显示结果
+- ✅ 表单能根据 Skill 定义动态生成（x-for 循环 + `inp.required`/`inp.default`/`inp.type` 渲染）
+- ✅ 能成功运行并显示结果（含 token 统计和耗时）
+- ✅ 47 个 pytest 测试全部通过（HTML 结构 + API 集成 + 向后兼容）
 
 ---
 
