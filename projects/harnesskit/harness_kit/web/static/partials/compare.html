@@ -1,0 +1,302 @@
+<!-- Phase 8.4 — A/B Compare Partial -->
+<div x-data="compareSection()" x-init="loadSkills()" class="max-w-6xl mx-auto space-y-6">
+
+  <!-- Header -->
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">A/B Compare</h1>
+    <p class="mt-1 text-sm text-gray-500">Run two skill versions side-by-side and highlight differences.</p>
+  </div>
+
+  <!-- Config bar -->
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-4">
+
+    <!-- Row 1: Skill selector -->
+    <div class="flex items-center gap-4 flex-wrap">
+      <label class="text-sm font-medium text-gray-700 w-20 shrink-0">Skill</label>
+      <select id="compare-skill-select"
+              x-model="skillName"
+              @change="onSkillChange()"
+              class="flex-1 min-w-48 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="">— select skill —</option>
+        <template x-for="s in skills" :key="s.name">
+          <option :value="s.name" x-text="s.name + ' · ' + (s.version || '')"></option>
+        </template>
+      </select>
+      <template x-if="loadError">
+        <span class="text-xs text-red-600" x-text="loadError"></span>
+      </template>
+    </div>
+
+    <!-- Row 2: Version A / Version B -->
+    <div class="flex items-center gap-4 flex-wrap" x-show="skillName">
+      <label class="text-sm font-medium text-gray-700 w-20 shrink-0">Versions</label>
+
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold text-indigo-600 bg-indigo-50 rounded px-2 py-0.5">A</span>
+        <select id="compare-version-a"
+                x-model="versionA"
+                class="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <template x-for="v in versions" :key="v">
+            <option :value="v" x-text="v"></option>
+          </template>
+        </select>
+      </div>
+
+      <span class="text-gray-400 text-sm">vs</span>
+
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold text-purple-600 bg-purple-50 rounded px-2 py-0.5">B</span>
+        <select id="compare-version-b"
+                x-model="versionB"
+                class="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
+          <template x-for="v in versions" :key="v">
+            <option :value="v" x-text="v"></option>
+          </template>
+        </select>
+      </div>
+
+      <div class="flex items-center gap-2 ml-auto">
+        <span class="text-xs text-gray-500">Model override</span>
+        <input id="compare-model-input"
+               x-model="model"
+               type="text"
+               placeholder="leave blank → config default"
+               class="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-60 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+    </div>
+
+    <!-- Row 3: Inputs -->
+    <template x-if="skillName && detail">
+      <div class="space-y-2">
+        <label class="text-sm font-medium text-gray-700">Inputs</label>
+        <div id="compare-input-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <template x-for="inp in (detail.inputs || [])" :key="inp.name">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs text-gray-500">
+                <span x-text="inp.name"></span>
+                <span x-show="inp.required" class="text-red-500 ml-0.5">*</span>
+                <span x-show="inp.default !== undefined && inp.default !== null"
+                      class="text-gray-400 ml-1"
+                      x-text="'(default: ' + inp.default + ')'"></span>
+              </label>
+              <textarea
+                :id="'compare-input-' + inp.name"
+                x-model="inputs[inp.name]"
+                rows="3"
+                :placeholder="inp.default !== undefined && inp.default !== null ? String(inp.default) : inp.name"
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
+              ></textarea>
+            </div>
+          </template>
+          <template x-if="(detail.inputs || []).length === 0">
+            <p class="text-xs text-gray-400 italic">This skill has no inputs.</p>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- Run button -->
+    <div class="flex items-center gap-3 pt-1" x-show="skillName">
+      <button id="compare-run-btn"
+              @click="runCompare()"
+              :disabled="running || !versionA || !versionB"
+              class="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
+        <span x-show="!running">⚡ Compare</span>
+        <span x-show="running" class="flex items-center gap-2">
+          <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          Running both versions…
+        </span>
+      </button>
+      <template x-if="runError">
+        <span id="compare-run-error" class="text-sm text-red-600" x-text="runError"></span>
+      </template>
+    </div>
+  </div>
+
+  <!-- Results: side-by-side panels -->
+  <template x-if="resultA || resultB">
+    <div id="compare-results" class="grid grid-cols-2 gap-4">
+
+      <!-- Panel A -->
+      <div class="bg-white rounded-lg border border-indigo-200 shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-2 bg-indigo-50 border-b border-indigo-200">
+          <span class="text-sm font-semibold text-indigo-700">
+            A · <span x-text="versionA"></span>
+          </span>
+          <span x-show="resultA" class="text-xs text-gray-500">
+            <span x-text="resultA ? resultA.input_tokens + '+' + resultA.output_tokens + ' tok' : ''"></span>
+            · <span x-text="resultA ? resultA.duration.toFixed(2) + 's' : ''"></span>
+          </span>
+        </div>
+        <div class="p-4">
+          <template x-if="resultA">
+            <pre id="compare-output-a"
+                 class="text-sm font-mono whitespace-pre-wrap break-words leading-relaxed"
+                 x-html="diffHtml(resultA.output, resultB ? resultB.output : resultA.output, 'a')"></pre>
+          </template>
+          <template x-if="!resultA && running">
+            <div class="text-gray-400 text-sm animate-pulse">Waiting for version A…</div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Panel B -->
+      <div class="bg-white rounded-lg border border-purple-200 shadow-sm overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-2 bg-purple-50 border-b border-purple-200">
+          <span class="text-sm font-semibold text-purple-700">
+            B · <span x-text="versionB"></span>
+          </span>
+          <span x-show="resultB" class="text-xs text-gray-500">
+            <span x-text="resultB ? resultB.input_tokens + '+' + resultB.output_tokens + ' tok' : ''"></span>
+            · <span x-text="resultB ? resultB.duration.toFixed(2) + 's' : ''"></span>
+          </span>
+        </div>
+        <div class="p-4">
+          <template x-if="resultB">
+            <pre id="compare-output-b"
+                 class="text-sm font-mono whitespace-pre-wrap break-words leading-relaxed"
+                 x-html="diffHtml(resultB.output, resultA ? resultA.output : resultB.output, 'b')"></pre>
+          </template>
+          <template x-if="!resultB && running">
+            <div class="text-gray-400 text-sm animate-pulse">Waiting for version B…</div>
+          </template>
+        </div>
+      </div>
+
+    </div>
+  </template>
+
+  <!-- Diff legend -->
+  <template x-if="resultA && resultB">
+    <div id="compare-diff-legend" class="flex items-center gap-4 text-xs text-gray-500">
+      <span class="font-medium">Diff legend:</span>
+      <span><mark class="bg-green-100 text-green-800 rounded px-1">unique to this side</mark></span>
+      <span><mark class="bg-yellow-100 text-yellow-800 rounded px-1">common text</mark> (no highlight)</span>
+    </div>
+  </template>
+
+</div>
+
+<script>
+function compareSection() {
+  return {
+    // state
+    skills: [],
+    skillName: '',
+    versions: [],
+    versionA: '',
+    versionB: '',
+    model: '',
+    detail: null,
+    inputs: {},
+    loadError: null,
+    running: false,
+    runError: null,
+    resultA: null,
+    resultB: null,
+
+    async loadSkills() {
+      try {
+        const r = await fetch('/api/skills');
+        this.skills = r.ok ? await r.json() : [];
+      } catch (e) {
+        this.loadError = 'Failed to load skills: ' + e.message;
+      }
+    },
+
+    async onSkillChange() {
+      this.versions = [];
+      this.versionA = '';
+      this.versionB = '';
+      this.detail = null;
+      this.inputs = {};
+      this.resultA = null;
+      this.resultB = null;
+      this.runError = null;
+      if (!this.skillName) return;
+
+      // Load versions
+      try {
+        const r = await fetch('/api/skills/' + encodeURIComponent(this.skillName) + '/versions');
+        if (r.ok) {
+          this.versions = await r.json();
+          // Default: oldest as A, newest as B (or both same if only one)
+          this.versionA = this.versions[0] || '';
+          this.versionB = this.versions[this.versions.length - 1] || '';
+        }
+      } catch (e) { /* ignore */ }
+
+      // Load detail for inputs
+      try {
+        const r = await fetch('/api/skills/' + encodeURIComponent(this.skillName));
+        if (r.ok) {
+          this.detail = await r.json();
+          for (const inp of (this.detail.inputs || [])) {
+            if (inp.default !== undefined && inp.default !== null) {
+              this.inputs[inp.name] = String(inp.default);
+            }
+          }
+        }
+      } catch (e) { /* ignore */ }
+    },
+
+    async runCompare() {
+      this.running = true;
+      this.runError = null;
+      this.resultA = null;
+      this.resultB = null;
+
+      try {
+        const r = await fetch('/api/compare', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            skill: this.skillName,
+            version_a: this.versionA,
+            version_b: this.versionB,
+            inputs: this.inputs,
+            model: this.model || null,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          this.runError = err.detail || ('HTTP ' + r.status);
+        } else {
+          const data = await r.json();
+          this.resultA = data.result_a;
+          this.resultB = data.result_b;
+        }
+      } catch (e) {
+        this.runError = 'Network error: ' + e.message;
+      } finally {
+        this.running = false;
+      }
+    },
+
+    // Simple word-level diff highlighting.
+    // side = 'a' | 'b': highlights words unique to THIS side in green.
+    diffHtml(thisText, otherText, side) {
+      const escape = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if (!thisText) return '';
+      if (thisText === otherText) return escape(thisText);
+
+      const wordsA = thisText.split(/(\s+)/);
+      const wordsB = otherText.split(/(\s+)/);
+      const setB = new Set(wordsB.filter(w => w.trim()));
+
+      return wordsA.map(token => {
+        if (!token.trim()) return escape(token); // whitespace — pass through
+        const inOther = setB.has(token);
+        if (!inOther) {
+          // unique to this side — highlight green
+          return '<mark class="bg-green-100 text-green-800 rounded px-0.5">' + escape(token) + '</mark>';
+        }
+        return escape(token);
+      }).join('');
+    },
+  };
+}
+</script>

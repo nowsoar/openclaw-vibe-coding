@@ -3281,8 +3281,48 @@ Phase 8.3 ships with **47 pytest tests** in `tests/test_web_playground.py`:
 
 ---
 
+## Phase 8.4 — A/B 对比界面 (A/B Compare)
+
+Phase 8.4 adds a dedicated **A/B Compare** section to the Web Playground, letting you run two
+versions of the same skill side-by-side with a single click and immediately see the differences
+between their outputs.
+
+```bash
+harnesskit serve
+# Open http://localhost:7749 → click "Compare" in the left sidebar
+```
+
+### Features
+
+- **Skill & version selector** — choose any skill, then pick version A and version B from a dropdown populated by `GET /api/skills/{name}/versions`
+- **Shared input form** — one set of inputs drives both runs (dynamically generated from the skill's input definitions, with required/optional/default indicators)
+- **Parallel execution** — the `POST /api/compare` endpoint runs both versions concurrently using a `ThreadPoolExecutor` and returns a `CompareResponse{result_a, result_b}` in a single HTTP call
+- **Side-by-side output panels** — A (blue) and B (purple) results displayed next to each other with per-run token counts and duration
+- **Word-level diff highlighting** — words unique to each side are highlighted green, making differences immediately obvious
+- **Model override** — an optional model field lets you override the configured default for both runs
+
+### New API endpoints (Phase 8.4)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/skills/{name}/versions` | Returns all available versions for a skill, sorted oldest → newest |
+| `POST /api/compare` | Run two skill versions in parallel; body: `{skill, version_a, version_b, inputs, model?}`; returns `{result_a, result_b}` |
+
+### Phase 8.4 test coverage
+
+Phase 8.4 ships with **42 pytest tests** in `tests/test_web_ab_compare.py`:
+
+| Class | Tests | What is verified |
+|-------|-------|-----------------|
+| `TestListSkillVersions` | 5 | 200 with version list, sort order, single-version skill, 404 missing, JSON content-type |
+| `TestCompareEndpoint` | 9 | 200 success, response shape (all 7 fields), correct versions in results, 404 skill/version, 422 missing input, 503 no API key, model override, same-version both sides |
+| `TestComparePartialHTMLStructure` | 18 | heading, skill/version-A/version-B selects, input form, model input, run button, output panels A+B, error element, diff legend, API refs, Alpine component, `runCompare`/`diffHtml` functions, file existence |
+| `TestBackwardCompat` | 10 | all Phase 8.1/8.2/8.3 routes still work; Compare nav item in index; OpenAPI paths updated |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 8.3 complete** — Prompt Playground — interactive split-panel UI with dynamic input forms generated from skill definitions, model selector, live LLM run, and output display with token stats; 47 new tests all passing (113 total for Phase 8).
+Current status: **Phase 8.4 complete** — A/B Compare — side-by-side skill version comparison with parallel execution, word-level diff highlighting, and shared input form; 42 new tests all passing (155 total for Phase 8).
