@@ -1,4 +1,4 @@
-"""HarnessKit Web — FastAPI server + HTMX/Alpine.js frontend (Phase 8.5)."""
+"""HarnessKit Web — FastAPI server + HTMX/Alpine.js frontend (Phase 8.6)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ _STATIC_DIR = Path(__file__).parent / "static"
 # Valid frontend sections
 # ---------------------------------------------------------------------------
 
-_SECTIONS = {"skills", "harness", "eval", "logs", "settings", "compare"}
+_SECTIONS = {"skills", "harness", "eval", "logs", "settings", "compare", "blueprints"}
 
 
 # ---------------------------------------------------------------------------
@@ -400,6 +400,128 @@ def create_app(base: Path | None = None) -> FastAPI:
             base=base_path,
             limit=limit,
         )
+
+    # ------------------------------------------------------------------
+    # Blueprint API Routes (Phase 8.6)
+    # ------------------------------------------------------------------
+
+    def _mermaid_graph(bp: dict[str, Any]) -> str:
+        """Generate a Mermaid flowchart LR definition from a blueprint dict."""
+        lines = ["flowchart LR"]
+        steps = bp.get("steps") or []
+
+        # Node definitions
+        lines.append('  __START__(["▶ Start"])')
+        for step in steps:
+            sid = step.get("id", "?")
+            sname = step.get("name") or sid
+            stype = step.get("type", "deterministic")
+            icon = "⚙" if stype == "deterministic" else "🤖"
+            safe_name = sname.replace('"', "'")
+            lines.append(f'  {sid}["{icon} {sid}\\n{safe_name}"]')
+        lines.append('  __END__(["⏹ End"])')
+
+        # Edges
+        if steps:
+            lines.append(f"  __START__ --> {steps[0]['id']}")
+            for i in range(len(steps) - 1):
+                a = steps[i]["id"]
+                b = steps[i + 1]["id"]
+                on_fail = steps[i].get("on_fail", "stop")
+                if on_fail and on_fail.startswith("goto:"):
+                    target = on_fail[5:]
+                    lines.append(f"  {a} -- fail --> {target}")
+                    lines.append(f"  {a} --> {b}")
+                elif on_fail == "continue":
+                    lines.append(f"  {a} -.->|on fail: continue| {b}")
+                else:
+                    lines.append(f"  {a} --> {b}")
+            lines.append(f"  {steps[-1]['id']} --> __END__")
+        else:
+            lines.append("  __START__ --> __END__")
+
+        return "\n".join(lines)
+
+    @api.get("/api/blueprints", summary="List all blueprints")
+    def list_blueprints_api() -> list[dict[str, Any]]:
+        """Return metadata for every blueprint registered in the local .harness directory."""
+        from harness_kit import blueprint as _bp_mod  # noqa: PLC0415
+
+        bps = _bp_mod.list_blueprints(base=base_path)
+        result = []
+        for bp in bps:
+            result.append({
+                "name": bp.get("name", ""),
+                "version": bp.get("version", ""),
+                "description": bp.get("description", ""),
+                "step_count": len(bp.get("steps") or []),
+                "created_at": bp.get("created_at", ""),
+            })
+        return result
+
+    @api.get("/api/blueprints/{name}", summary="Get blueprint details")
+    def get_blueprint_api(name: str) -> dict[str, Any]:
+        """Return the full definition of the named blueprint (current version)."""
+        from harness_kit import blueprint as _bp_mod  # noqa: PLC0415
+
+        try:
+            return _bp_mod.load_blueprint(name, base=base_path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Blueprint '{name}' not found")
+
+    @api.get("/api/blueprints/{name}/graph", summary="Get blueprint Mermaid graph")
+    def get_blueprint_graph(name: str) -> dict[str, str]:
+        """Return a Mermaid flowchart definition for the named blueprint."""
+        from harness_kit import blueprint as _bp_mod  # noqa: PLC0415
+
+        try:
+            bp = _bp_mod.load_blueprint(name, base=base_path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Blueprint '{name}' not found")
+
+        return {"name": name, "mermaid": _mermaid_graph(bp)}
+
+    @api.post("/api/blueprints/{name}/dry-run", summary="Dry-run a blueprint")
+    def dry_run_blueprint(name: str) -> dict[str, Any]:
+        """Simulate blueprint execution without calling LLM. Returns step plan."""
+        from harness_kit import blueprint as _bp_mod  # noqa: PLC0415
+
+        try:
+            bp = _bp_mod.load_blueprint(name, base=base_path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Blueprint '{name}' not found")
+
+        steps = bp.get("steps") or []
+        plan = []
+        for step in steps:
+            stype = step.get("type", "deterministic")
+            entry: dict[str, Any] = {
+                "id": step.get("id", ""),
+                "name": step.get("name") or step.get("id", ""),
+                "type": stype,
+                "status": "pending",
+            }
+            if stype == "deterministic":
+                entry["action"] = f"shell: {step.get('run', '')}"
+            else:
+                if step.get("harness"):
+                    entry["action"] = f"harness: {step.get('harness')}"
+                elif step.get("skill"):
+                    entry["action"] = f"skill: {step.get('skill')}"
+                else:
+                    entry["action"] = "agentic (no target)"
+            timeout = step.get("timeout")
+            if timeout:
+                entry["timeout"] = timeout
+            plan.append(entry)
+
+        return {
+            "blueprint": name,
+            "version": bp.get("version", ""),
+            "dry_run": True,
+            "step_count": len(plan),
+            "steps": plan,
+        }
 
     # ------------------------------------------------------------------
 

@@ -3386,8 +3386,88 @@ Phase 8.5 ships with **49 pytest tests** in `tests/test_web_eval_dashboard.py`:
 
 ---
 
+## Phase 8.6 — Blueprint Visualization
+
+Phase 8.6 adds a **Blueprint Visualization** panel to the Web Playground, letting you explore
+workflow definitions as interactive flow graphs, inspect each step's type and action, and simulate
+execution via a step-by-step dry run — all without touching the CLI.
+
+### Using Blueprint Visualization
+
+```bash
+harnesskit serve          # start web server (default: http://localhost:7749)
+# Click "Blueprints" in the navigation bar
+```
+
+### Panel layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Blueprints                                       Phase 8.6    │
+├────────────────┬────────────────────────────────────────────────┤
+│ Blueprints  2  │  code-review-pipeline  v0.0.1                 │
+│ [Search…]      │  Lint then review                             │
+│ ─────────────  │  Inputs: file_path *                          │
+│ ▸ code-review  │                                               │
+│   v0.0.1       ├────────────────────────────────────────────────┤
+│   2 steps      │  Flow Graph                                   │
+│ ─────────────  │  ▶Start → ⚙ lint → 🤖 review → ⏹End        │
+│ ▸ full-pipe    │   (Mermaid.js flowchart LR)                   │
+│   v0.0.1       ├────────────────────────────────────────────────┤
+│   3 steps      │  Steps                      [▶ Dry Run]      │
+│                │  ⬜ lint   deterministic  shell: flake8 …    │
+│                │  ⬜ review agentic        skill: code-review… │
+│                ├────────────────────────────────────────────────┤
+│                │  Outputs                                      │
+│                │  lint_result    {{steps.lint.output}}         │
+│                │  review_result  {{steps.review.output}}       │
+└────────────────┴────────────────────────────────────────────────┘
+```
+
+### New API endpoints (Phase 8.6)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/blueprints` | List all blueprints (name, version, description, step_count) |
+| `GET` | `/api/blueprints/{name}` | Get full blueprint definition |
+| `GET` | `/api/blueprints/{name}/graph` | Get Mermaid flowchart definition |
+| `POST` | `/api/blueprints/{name}/dry-run` | Simulate execution — returns step plan with pending status |
+
+### Dry run animation
+
+Clicking **Dry Run** sends a `POST /api/blueprints/{name}/dry-run` request. The panel then
+animates through each step (pending → running → done) at 400 ms per step using Alpine.js
+reactivity, showing a live walkthrough without calling any LLM.
+
+### Mermaid.js graph
+
+The `GET /api/blueprints/{name}/graph` endpoint returns a `mermaid` field containing a
+`flowchart LR` diagram. Edge styles encode `on_fail` modes:
+
+| `on_fail` value | Edge style |
+|-----------------|------------|
+| `stop` (default) | solid `-->` |
+| `continue` | dashed `-.->|on fail: continue|` |
+| `goto:<id>` | dual edges: fail goes to target, success continues forward |
+
+### Phase 8.6 test coverage
+
+Phase 8.6 ships with **48 pytest tests** in `tests/test_web_blueprint_viz.py`:
+
+| Class | Tests | What's covered |
+|-------|-------|----------------|
+| `TestListBlueprints` | 4 | list returns all, metadata fields (name/version/description/step_count), empty list, multiple blueprints |
+| `TestGetBlueprint` | 5 | full definition, steps fields, outputs, inputs, 404 on missing |
+| `TestGetBlueprintGraph` | 7 | mermaid field, flowchart keyword, step IDs, __START__/__END__, continue on_fail, 404, goto edge |
+| `TestDryRunBlueprint` | 7 | step plan, pending status, action field, metadata, 404, type preserved, harness action |
+| `TestBlueprintsPartialHTMLStructure` | 16 | all UI element IDs, Mermaid CDN, Alpine component, API refs, dry-run/graph calls, phase badge |
+| `TestIndexBlueprintNav` | 3 | "blueprints" in nav, label, Phase 8.6 badge |
+| `TestBackwardsCompatibility` | 6 | all Phase 8.1–8.5 routes and partials still work |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 8.5 complete** — Eval Dashboard — live test suite browser, one-click suite runs, recent results table, and SVG sparkline trend chart; 49 new tests all passing (204 total for Phase 8).
+Current status: **Phase 8.6 complete** — Blueprint Visualization — Mermaid.js flow graph, step-by-step dry run animation, 4 new API endpoints, 48 new tests all passing (252 total for Phase 8).

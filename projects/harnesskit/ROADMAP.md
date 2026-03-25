@@ -1176,15 +1176,16 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 8.6：Blueprint 可视化
+### Phase 8.6：Blueprint 可视化 ✅
 **任务**：
 1. 简单的节点图（用 Mermaid.js 或 SVG）
 2. 显示步骤和依赖关系
 3. 运行时高亮当前步骤
 
 **验收标准**：
-- 流程图清晰
-- 运行时状态更新
+- ✅ 流程图清晰（Mermaid.js flowchart LR，⚙/🤖 图标区分 deterministic/agentic，__START__/__END__ 节点）
+- ✅ 运行时状态更新（Dry Run 按钮逐步动画：pending→running→done，颜色区分）
+- ✅ 48 个 pytest 测试全部通过（API + HTML 结构 + 导航 + 向后兼容）
 
 ---
 

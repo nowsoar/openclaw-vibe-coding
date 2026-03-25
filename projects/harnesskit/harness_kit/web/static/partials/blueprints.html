@@ -1,0 +1,369 @@
+<!-- Phase 8.6 — Blueprint Visualization -->
+<!-- Mermaid.js CDN (loaded lazily via Alpine init) -->
+<script>
+  if (!window._mermaidLoaded) {
+    window._mermaidLoaded = true;
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+    s.onload = function() { mermaid.initialize({ startOnLoad: false, theme: 'default' }); };
+    document.head.appendChild(s);
+  }
+</script>
+
+<div id="blueprints-section" x-data="blueprintsSection()" x-init="load()">
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Blueprints</h1>
+      <p class="text-sm text-gray-500 mt-1">Visualize and dry-run your mixed deterministic + agentic workflows</p>
+    </div>
+    <span class="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-medium">Phase 8.6</span>
+  </div>
+
+  <!-- ── Two-column layout ─────────────────────────────────────────────── -->
+  <div class="flex gap-6">
+
+    <!-- ── Left: Blueprint list ──────────────────────────────────────── -->
+    <div class="w-64 shrink-0">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+          <span class="text-sm font-semibold text-gray-700">Blueprints</span>
+          <span class="text-xs text-gray-400" x-text="blueprints.length + ' total'"></span>
+        </div>
+
+        <!-- Search -->
+        <div class="px-3 py-2 border-b border-gray-100">
+          <input
+            id="blueprint-search"
+            type="text"
+            x-model="search"
+            placeholder="Search…"
+            class="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+        </div>
+
+        <!-- List -->
+        <div id="blueprint-list" class="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+          <template x-for="bp in filtered" :key="bp.name">
+            <button
+              class="w-full text-left px-4 py-3 hover:bg-indigo-50 transition-colors group"
+              :class="selected && selected.name === bp.name ? 'bg-indigo-50 border-r-2 border-indigo-500' : ''"
+              @click="selectBlueprint(bp.name)"
+            >
+              <div class="flex items-start gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+                </svg>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-medium text-gray-800 truncate" x-text="bp.name"></div>
+                  <div class="text-xs text-gray-400 mt-0.5">
+                    <span x-text="bp.version"></span>
+                    · <span x-text="bp.step_count + ' step' + (bp.step_count !== 1 ? 's' : '')"></span>
+                  </div>
+                  <div class="text-xs text-gray-500 truncate mt-0.5" x-text="bp.description || '—'"></div>
+                </div>
+              </div>
+            </button>
+          </template>
+
+          <!-- Empty state -->
+          <div id="blueprint-empty" x-show="filtered.length === 0" class="px-4 py-8 text-center text-gray-400">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+            </svg>
+            <p class="text-sm" x-text="search ? 'No match' : 'No blueprints yet'"></p>
+            <p class="text-xs mt-1" x-show="!search">Run <code class="bg-gray-100 px-1 rounded">harnesskit blueprint create</code></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right: Detail + Graph ──────────────────────────────────────── -->
+    <div class="flex-1 min-w-0 space-y-4">
+
+      <!-- Placeholder when nothing selected -->
+      <div x-show="!selected" class="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col items-center justify-center py-20 text-gray-400">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/>
+        </svg>
+        <p class="text-sm font-medium">Select a blueprint to visualize</p>
+      </div>
+
+      <!-- Blueprint detail panel -->
+      <div x-show="selected" class="space-y-4">
+
+        <!-- Header card -->
+        <div id="blueprint-detail-card" class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <div class="flex items-start justify-between">
+            <div>
+              <h2 id="blueprint-detail-name" class="text-lg font-bold text-gray-900" x-text="selected?.name || ''"></h2>
+              <p class="text-sm text-gray-500 mt-1" x-text="selected?.description || ''"></p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full" x-text="selected?.version || ''"></span>
+              <span class="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full" x-text="(selected?.steps?.length || 0) + ' steps'"></span>
+            </div>
+          </div>
+
+          <!-- Inputs summary -->
+          <div x-show="selected?.inputs?.length" class="mt-3 flex flex-wrap gap-2">
+            <span class="text-xs text-gray-400 font-medium">Inputs:</span>
+            <template x-for="inp in (selected?.inputs || [])" :key="inp.name">
+              <span class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full"
+                    x-text="inp.name + (inp.required ? ' *' : '')"></span>
+            </template>
+          </div>
+        </div>
+
+        <!-- Mermaid graph card -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <span class="text-sm font-semibold text-gray-700">Flow Graph</span>
+            <div class="flex items-center gap-3">
+              <!-- Legend -->
+              <span class="flex items-center gap-1 text-xs text-gray-500">
+                <span class="inline-block w-3 h-3 bg-blue-100 border border-blue-300 rounded-sm"></span> deterministic
+              </span>
+              <span class="flex items-center gap-1 text-xs text-gray-500">
+                <span class="inline-block w-3 h-3 bg-purple-100 border border-purple-300 rounded-sm"></span> agentic
+              </span>
+            </div>
+          </div>
+
+          <!-- Loading spinner while fetching graph -->
+          <div x-show="graphLoading" class="flex items-center justify-center py-10 text-gray-400">
+            <svg class="animate-spin h-5 w-5 mr-2 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            Rendering graph…
+          </div>
+
+          <div id="blueprint-graph-container" x-show="!graphLoading"
+               class="p-4 overflow-x-auto min-h-32 flex items-center justify-center">
+            <!-- Mermaid SVG injected here by renderGraph() -->
+          </div>
+        </div>
+
+        <!-- Step table -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <span class="text-sm font-semibold text-gray-700">Steps</span>
+            <button
+              id="blueprint-dry-run-btn"
+              @click="dryRun()"
+              :disabled="dryRunLoading"
+              class="text-xs px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium disabled:opacity-50 transition-colors flex items-center gap-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span x-text="dryRunLoading ? 'Simulating…' : 'Dry Run'"></span>
+            </button>
+          </div>
+
+          <div id="blueprint-step-table" class="divide-y divide-gray-100">
+            <template x-for="step in stepPlan" :key="step.id">
+              <div
+                class="px-5 py-3 flex items-start gap-4 transition-colors duration-300"
+                :class="{
+                  'bg-green-50': step.status === 'done',
+                  'bg-yellow-50': step.status === 'running',
+                  'bg-red-50': step.status === 'failed',
+                  'bg-white': step.status === 'pending'
+                }"
+              >
+                <!-- Status icon -->
+                <div class="mt-0.5 shrink-0">
+                  <svg x-show="step.status === 'done'" class="h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                  <svg x-show="step.status === 'running'" class="h-5 w-5 text-yellow-500 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  <svg x-show="step.status === 'failed'" class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  <span x-show="step.status === 'pending'"
+                        class="inline-block h-5 w-5 rounded-full border-2 border-gray-300 bg-gray-50"></span>
+                </div>
+
+                <!-- Step info -->
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-gray-800" x-text="step.id"></span>
+                    <span class="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                          :class="step.type === 'deterministic' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'"
+                          x-text="step.type"></span>
+                  </div>
+                  <div class="text-sm text-gray-600 mt-0.5" x-text="step.name"></div>
+                  <div class="text-xs text-gray-400 mt-0.5 font-mono" x-text="step.action"></div>
+                </div>
+
+                <!-- Timeout badge -->
+                <div x-show="step.timeout" class="shrink-0 text-xs text-gray-400" x-text="step.timeout + 's'"></div>
+              </div>
+            </template>
+
+            <!-- Empty step plan (before dry run) — show raw steps from blueprint -->
+            <template x-if="stepPlan.length === 0 && selected?.steps?.length">
+              <template x-for="step in (selected?.steps || [])" :key="step.id">
+                <div class="px-5 py-3 flex items-start gap-4 bg-white">
+                  <span class="mt-0.5 shrink-0 inline-block h-5 w-5 rounded-full border-2 border-gray-300 bg-gray-50"></span>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-semibold text-gray-800" x-text="step.id"></span>
+                      <span class="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                            :class="step.type === 'deterministic' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'"
+                            x-text="step.type"></span>
+                    </div>
+                    <div class="text-sm text-gray-600 mt-0.5" x-text="step.name || step.id"></div>
+                    <div class="text-xs text-gray-400 mt-0.5 font-mono"
+                         x-text="step.run ? 'shell: ' + step.run : (step.harness ? 'harness: ' + step.harness : (step.skill ? 'skill: ' + step.skill : ''))"></div>
+                  </div>
+                  <div x-show="step.timeout" class="shrink-0 text-xs text-gray-400" x-text="step.timeout + 's'"></div>
+                </div>
+              </template>
+            </template>
+          </div>
+        </div>
+
+        <!-- Outputs card (shown when blueprint has outputs defined) -->
+        <div x-show="selected?.outputs && Object.keys(selected.outputs || {}).length > 0"
+             class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div class="px-5 py-3 border-b border-gray-100 bg-gray-50">
+            <span class="text-sm font-semibold text-gray-700">Outputs</span>
+          </div>
+          <div id="blueprint-outputs" class="divide-y divide-gray-100">
+            <template x-for="[key, val] in Object.entries(selected?.outputs || {})" :key="key">
+              <div class="px-5 py-2.5 flex items-center gap-3">
+                <span class="text-sm font-medium text-gray-700 w-32 shrink-0" x-text="key"></span>
+                <code class="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-mono truncate" x-text="val"></code>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Dry-run error -->
+        <div id="blueprint-dry-run-error" x-show="dryRunError"
+             class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700" x-text="dryRunError">
+        </div>
+
+      </div><!-- /selected -->
+    </div>
+  </div>
+</div>
+
+<script>
+function blueprintsSection() {
+  return {
+    blueprints: [],
+    search: '',
+    selected: null,
+    graphLoading: false,
+    dryRunLoading: false,
+    dryRunError: '',
+    stepPlan: [],
+
+    get filtered() {
+      if (!this.search) return this.blueprints;
+      const q = this.search.toLowerCase();
+      return this.blueprints.filter(b =>
+        b.name.toLowerCase().includes(q) || (b.description || '').toLowerCase().includes(q)
+      );
+    },
+
+    async load() {
+      try {
+        const res = await fetch('/api/blueprints');
+        this.blueprints = await res.json();
+      } catch (e) {
+        this.blueprints = [];
+      }
+    },
+
+    async selectBlueprint(name) {
+      this.stepPlan = [];
+      this.dryRunError = '';
+      this.graphLoading = true;
+      try {
+        const [detailRes, graphRes] = await Promise.all([
+          fetch('/api/blueprints/' + encodeURIComponent(name)),
+          fetch('/api/blueprints/' + encodeURIComponent(name) + '/graph'),
+        ]);
+        this.selected = await detailRes.json();
+        const graphData = await graphRes.json();
+        await this.$nextTick();
+        this.renderGraph(graphData.mermaid);
+      } catch (e) {
+        this.dryRunError = 'Failed to load blueprint: ' + e.message;
+      } finally {
+        this.graphLoading = false;
+      }
+    },
+
+    async renderGraph(mermaidDef) {
+      const container = document.getElementById('blueprint-graph-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const tryRender = async (attempts) => {
+        if (attempts <= 0) {
+          container.innerHTML = '<pre class="text-xs text-gray-500 p-2">' +
+            mermaidDef.replace(/</g, '&lt;') + '</pre>';
+          return;
+        }
+        if (typeof mermaid === 'undefined') {
+          await new Promise(r => setTimeout(r, 300));
+          return tryRender(attempts - 1);
+        }
+        try {
+          const id = 'bp-graph-' + Date.now();
+          const { svg } = await mermaid.render(id, mermaidDef);
+          container.innerHTML = svg;
+        } catch (e) {
+          container.innerHTML = '<pre class="text-xs text-gray-500 p-2 whitespace-pre-wrap">' +
+            mermaidDef.replace(/</g, '&lt;') + '</pre>';
+        }
+      };
+      await tryRender(10);
+    },
+
+    async dryRun() {
+      if (!this.selected) return;
+      this.dryRunLoading = true;
+      this.dryRunError = '';
+      this.stepPlan = [];
+
+      try {
+        const res = await fetch('/api/blueprints/' + encodeURIComponent(this.selected.name) + '/dry-run', {
+          method: 'POST',
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          this.dryRunError = err.detail || 'Dry run failed';
+          return;
+        }
+        const data = await res.json();
+        // Animate steps one-by-one
+        this.stepPlan = data.steps.map(s => ({ ...s, status: 'pending' }));
+        for (let i = 0; i < this.stepPlan.length; i++) {
+          this.stepPlan[i].status = 'running';
+          // Force Alpine reactivity by creating new array reference
+          this.stepPlan = [...this.stepPlan];
+          await new Promise(r => setTimeout(r, 400));
+          this.stepPlan[i].status = 'done';
+          this.stepPlan = [...this.stepPlan];
+        }
+      } catch (e) {
+        this.dryRunError = 'Request failed: ' + e.message;
+      } finally {
+        this.dryRunLoading = false;
+      }
+    },
+  };
+}
+</script>
