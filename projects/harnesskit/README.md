@@ -2868,8 +2868,65 @@ Phase 7.3 ships with **33 pytest tests** in `tests/test_tui_prompt_diff.py`:
 
 ---
 
+## Phase 7.4 — Eval 结果可视化 (Eval Result Visualization)
+
+Phase 7.4 adds an interactive **Eval Result Browser** inside the TUI — visualise test suite outcomes at a glance, with colour-coded pass/fail per case and full assertion detail on demand.
+
+```bash
+harnesskit tui          # launch TUI
+# → navigate to 🧪  Eval → press Enter
+```
+
+### Layout
+
+```
+┌─ 🧪 Test Suites ─────┬─ Cases ─ my-suite  (1/2 passed) ──────────────────────────────────────┐
+│                       │ ✓  Case 0                                                               │
+│ my-suite  (2 cases)   │ ✗  Case 1                                                               │
+│ other-suite (3 cases) │                                                                         │
+│                       ├─ 断言详情 ─────────────────────────────────────────────────────────────┤
+│                       │ Case 0  id: case-0                                                      │
+│                       │ 状态：✓ passed                                                          │
+│                       │ 耗时：0.100s   Tokens: in 10 / out 5                                   │
+│                       │ 断言（1/1 通过）：                                                      │
+│                       │   ✓  contains  $.result                                                 │
+│                       │      OK                                                                 │
+└───────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Left pane** — all test suites (from `.harness/evals/suites/`)
+**Top-right pane** — all cases for the selected suite, coloured:
+- `[green]✓[/green]` — case passed in the most-recent eval run
+- `[red]✗[/red]` — case failed or errored
+- `[dim]•[/dim]` — no run data yet
+
+**Bottom-right pane** — assertion detail for the selected case: status, duration, tokens, output preview, and each assertion with its message.
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `j / ↓` | Move selection down |
+| `k / ↑` | Move selection up |
+| `Tab` | Switch focus between Suites and Cases panes |
+| `Esc` | Return to main TUI navigation |
+
+### Tests
+
+Phase 7.4 ships with **30 pytest tests** in `tests/test_tui_eval_browser.py`:
+
+| Test Category | Count | Coverage |
+|---|---|---|
+| Pure helper functions | 9 | `_status_markup` (passed/failed/error/unknown), `_format_case_list` (no results, with results), `_format_assertion_detail` (no result, with result, with error) |
+| Module import & structure | 2 | package import, tui re-export |
+| Instantiation & bindings | 5 | basic, base_path injection, escape/j/k/tab bindings |
+| Textual pilot (async) | 12 | compose, empty state, suite listing, case list, green/red colouring, assertion messages, j/k nav, tab pane switch, j in cases pane, escape nav, result summary |
+| Main app integration | 2 | Enter on Eval nav → EvalBrowserScreen pushed |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 7.3 complete** — Prompt Diff 可视化 — side-by-side prompt version diff with line-level colour coding (red for deletions, green for additions) and character-level inline diff highlighting; 33 new tests all passing.
+Current status: **Phase 7.4 complete** — Eval 结果可视化 — interactive Eval Result Browser with suite list, per-case green/red pass/fail colouring, and detailed assertion inspection; 30 new tests all passing.

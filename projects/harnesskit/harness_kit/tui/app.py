@@ -8,6 +8,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
+from harness_kit.tui.eval_browser import EvalBrowserScreen
 from harness_kit.tui.prompt_diff import PromptDiffScreen
 from harness_kit.tui.skill_browser import SkillBrowserScreen
 
@@ -190,7 +191,7 @@ class HelpOverlay(Container):
             yield Label("")
             yield Label("[cyan]j / ↓[/cyan]    向下移动")
             yield Label("[cyan]k / ↑[/cyan]    向上移动")
-            yield Label("[cyan]Enter[/cyan]    进入 / 选择  （Skills → Skill 浏览器 | Prompts → Prompt Diff）")
+            yield Label("[cyan]Enter[/cyan]    进入 / 选择  （Skills → Skill 浏览器 | Prompts → Prompt Diff | Eval → Eval 结果浏览器）")
             yield Label("[cyan]Esc[/cyan]      返回上一屏")
             yield Label("[cyan]?[/cyan]        显示 / 关闭帮助")
             yield Label("[cyan]q[/cyan]        退出 HarnessKit TUI")
@@ -202,6 +203,11 @@ class HelpOverlay(Container):
             yield Label("")
             yield Label("[bold]Prompt Diff 快捷键[/bold]")
             yield Label("[cyan]j / k[/cyan]    同步滚动 diff 面板")
+            yield Label("[cyan]Esc[/cyan]      返回主菜单")
+            yield Label("")
+            yield Label("[bold]Eval 结果浏览器快捷键[/bold]")
+            yield Label("[cyan]Tab[/cyan]      切换 Suites / Cases 面板")
+            yield Label("[cyan]j / k[/cyan]    在当前面板上下移动")
             yield Label("[cyan]Esc[/cyan]      返回主菜单")
             yield Label("")
             yield Label("[dim]按任意键关闭[/dim]")
@@ -317,6 +323,9 @@ class HarnessKitApp(App):
             if item_id == "prompts":
                 self.push_screen(PromptDiffScreen())
                 return
+            if item_id == "eval":
+                self.push_screen(EvalBrowserScreen())
+                return
         self._update_content(idx)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -333,6 +342,8 @@ class HarnessKitApp(App):
                 self.push_screen(SkillBrowserScreen())
             elif item_id == "prompts":
                 self.push_screen(PromptDiffScreen())
+            elif item_id == "eval":
+                self.push_screen(EvalBrowserScreen())
 
     def action_toggle_help(self) -> None:
         self._help_visible = not self._help_visible
