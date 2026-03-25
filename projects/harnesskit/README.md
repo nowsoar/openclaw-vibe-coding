@@ -3043,8 +3043,87 @@ Phase 7.6 ships with **23 pytest tests** in `tests/test_tui_phase76.py`:
 
 ---
 
+## Phase 8.1 — Web 服务框架 (Web Service Framework)
+
+Phase 8.1 brings a full **FastAPI + uvicorn** HTTP layer to HarnessKit, letting you
+interact with your local `.harness/` workspace over a REST API — from a browser,
+Postman, or any HTTP client.
+
+### Quick start
+
+```bash
+# Install (fastapi + uvicorn are now core dependencies)
+pip install harness-kit
+
+# Start the server (default: http://127.0.0.1:7749)
+harnesskit serve
+
+# Custom host/port
+harnesskit serve --host 0.0.0.0 --port 8080
+
+# Development mode with auto-reload
+harnesskit serve --reload
+```
+
+### API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/skills` | List all skills (name, version, description, …) |
+| `GET` | `/api/skills/{name}` | Get full skill definition |
+| `POST` | `/api/skills/{name}/run` | Run a skill with given inputs |
+
+### Request / Response examples
+
+**List skills**
+```bash
+curl http://127.0.0.1:7749/api/skills
+# [{"name":"code-reviewer","version":"v0.1.0","description":"…"}, …]
+```
+
+**Get skill**
+```bash
+curl http://127.0.0.1:7749/api/skills/code-reviewer
+# {"name":"code-reviewer","version":"v0.1.0","inputs":[…], …}
+```
+
+**Run skill**
+```bash
+curl -X POST http://127.0.0.1:7749/api/skills/code-reviewer/run \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": {"code": "def foo(): pass", "language": "python"}, "model": "gpt-4o"}'
+# {"output":"…","model":"gpt-4o","input_tokens":120,"output_tokens":80,"duration":1.3,"skill":"code-reviewer","version":"v0.1.0"}
+```
+
+### CORS
+
+All origins are allowed (`*`) so any front-end running on localhost (or elsewhere)
+can call the API without a proxy.
+
+### Interactive docs
+
+FastAPI's auto-generated Swagger UI is available at
+[http://127.0.0.1:7749/docs](http://127.0.0.1:7749/docs) and the OpenAPI JSON
+schema at `/openapi.json`.
+
+### Phase 8.1 test coverage
+
+Phase 8.1 ships with **22 pytest tests** in `tests/test_web.py`:
+
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| App creation | 3 | `create_app()` returns FastAPI, default base, title |
+| `GET /api/skills` | 4 | empty workspace, skill present, JSON content-type, fields |
+| `GET /api/skills/{name}` | 4 | 200 with body, 404 with detail, unknown skill name |
+| `POST /api/skills/{name}/run` | 5 | 404 missing skill, 422 missing input, 503 no API key, 200 with LLM mock, model override |
+| CORS | 2 | preflight OPTIONS, allow-origin on GET |
+| OpenAPI docs | 2 | schema paths present, /docs 200 |
+| CLI `serve` | 2 | command registered, `--host`/`--port` flags |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 7.6 complete** — TUI 优化与完善 — scrollable help page, `t`-key theme toggle (dark ↔ light), responsive sidebar, and error-safe screen loading; 23 new tests all passing (169 total TUI tests).
+Current status: **Phase 8.1 complete** — Web 服务框架 — FastAPI + uvicorn server with `GET /api/skills`, `GET /api/skills/{name}`, `POST /api/skills/{name}/run`, CORS, and `harnesskit serve` CLI command; 22 new tests all passing.

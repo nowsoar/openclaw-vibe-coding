@@ -4650,5 +4650,45 @@ def tui() -> None:
     app_tui.run()
 
 
+# ---------------------------------------------------------------------------
+# serve command
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host address."),
+    port: int = typer.Option(7749, "--port", "-p", help="Bind port."),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (development)."),
+) -> None:
+    """Start the HarnessKit Web API server (FastAPI + uvicorn)."""
+    try:
+        import uvicorn  # noqa: PLC0415
+    except ImportError:
+        console.print(
+            "[red]uvicorn is not installed.[/red] "
+            "Run: [bold]pip install 'harness-kit[web]'[/bold] or "
+            "[bold]pip install fastapi uvicorn[/bold]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        from harness_kit.web import create_app  # noqa: PLC0415
+    except ImportError:
+        console.print(
+            "[red]fastapi is not installed.[/red] "
+            "Run: [bold]pip install 'harness-kit[web]'[/bold] or "
+            "[bold]pip install fastapi uvicorn[/bold]"
+        )
+        raise typer.Exit(1)
+
+    console.print(f"[bold green]HarnessKit Web API[/bold green] starting at [cyan]http://{host}:{port}[/cyan]")
+    console.print(f"  Docs: [cyan]http://{host}:{port}/docs[/cyan]")
+    console.print("  Press [bold]Ctrl+C[/bold] to stop.\n")
+
+    web_app = create_app(base=Path.cwd())
+    uvicorn.run(web_app, host=host, port=port, reload=reload)
+
+
 if __name__ == "__main__":
     main()

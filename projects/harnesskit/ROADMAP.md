@@ -1098,7 +1098,7 @@ Blueprint（工作流编排）
 
 **目标**：FastAPI + 轻量前端，实现 Web UI。
 
-### Phase 8.1：Web 服务框架
+### Phase 8.1：Web 服务框架 ✅
 **任务**：
 1. 引入 `fastapi` 和 `uvicorn`
 2. 实现 `harnesskit serve` 命令
@@ -1110,8 +1110,8 @@ Blueprint（工作流编排）
 4. CORS 配置
 
 **验收标准**：
-- API 能正常响应
-- 能正确加载本地 .harness 数据
+- ✅ API 能正常响应
+- ✅ 能正确加载本地 .harness 数据
 
 ---
 
