@@ -151,6 +151,13 @@ app.add_typer(improve_app, name="improve")
 health_app = typer.Typer(help="Harness health check — staleness, success rates, unused assets.", no_args_is_help=True)
 app.add_typer(health_app, name="health")
 
+# ---------------------------------------------------------------------------
+# export sub-app
+# ---------------------------------------------------------------------------
+
+export_app = typer.Typer(help="Export HarnessKit assets — AGENTS.md or MCP Server.", no_args_is_help=True)
+app.add_typer(export_app, name="export")
+
 
 def _require_init() -> None:
     if not is_initialized():
@@ -4648,6 +4655,66 @@ def tui() -> None:
 
     app_tui = HarnessKitApp()
     app_tui.run()
+
+
+# ---------------------------------------------------------------------------
+# export sub-app commands
+# ---------------------------------------------------------------------------
+
+
+@export_app.command("agents-md")
+def export_agents_md(
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output file path (default: print to stdout).",
+    ),
+) -> None:
+    """Generate an AGENTS.md skill directory (≤60 lines) from registered Skills and Harnesses."""
+    _require_init()
+    from harness_kit.export import generate_agents_md  # noqa: PLC0415
+
+    content = generate_agents_md(base=Path.cwd())
+
+    if output is None:
+        console.print(content)
+        return
+
+    output.write_text(content, encoding="utf-8")
+    lines = content.count("\n")
+    console.print(f"[bold green]✓[/bold green] AGENTS.md written to [cyan]{output}[/cyan] ({lines} lines)")
+
+
+@export_app.command("mcp")
+def export_mcp(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host (SSE transport; ignored for stdio)."),
+    port: int = typer.Option(7750, "--port", "-p", help="Bind port (SSE transport; ignored for stdio)."),
+) -> None:
+    """Start an MCP Server exposing all HarnessKit Skills as MCP Tools (stdio transport).
+
+    Configure Claude Desktop or Cursor to use this server by pointing to:
+
+        harnesskit export mcp
+
+    Skills are exposed as MCP tools; callers pass the skill's input fields as
+    arguments and receive the LLM output as text.
+    """
+    _require_init()
+    try:
+        from harness_kit.export import run_mcp_server  # noqa: PLC0415
+    except ImportError:
+        console.print(
+            "[red]mcp package not installed.[/red] "
+            "Run: [bold]pip install 'harness-kit[mcp]'[/bold] or [bold]pip install mcp[/bold]"
+        )
+        raise typer.Exit(1)
+
+    console.print("[bold green]HarnessKit MCP Server[/bold green] starting (stdio transport)…")
+    console.print("  Skills are available as MCP Tools.")
+    console.print("  Press [bold]Ctrl+C[/bold] to stop.\n")
+
+    run_mcp_server(base=Path.cwd())
 
 
 # ---------------------------------------------------------------------------

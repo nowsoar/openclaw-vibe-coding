@@ -1189,7 +1189,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 8.7：MCP Server 导出 + AGENTS.md 导出
+### Phase 8.7：MCP Server 导出 + AGENTS.md 导出 ✅
 **任务**：
 1. 实现 `harnesskit export mcp`
 2. 启动 MCP Server
@@ -1203,9 +1203,9 @@ Blueprint（工作流编排）
    - 每次更新 Skill 后可重新生成
 
 **验收标准**：
-- MCP Server 能启动，Claude/Cursor 能发现并调用
-- 生成的 AGENTS.md 不超过 60 行
-- AGENTS.md 内容清晰，指向正确的 Skill 文档
+- ✅ MCP Server 能启动，Claude/Cursor 能发现并调用
+- ✅ 生成的 AGENTS.md 不超过 60 行
+- ✅ AGENTS.md 内容清晰，指向正确的 Skill 文档
 
 ---
 
