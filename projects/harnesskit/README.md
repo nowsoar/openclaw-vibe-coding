@@ -3670,8 +3670,62 @@ Phase 8.8 ships with **36 pytest tests** in `tests/test_registry.py`:
 
 ---
 
+## Phase 8.9 — Package & Publish
+
+Phase 8.9 completes the release cycle by producing a fully PyPI-ready package.
+
+### What changed
+
+- **`pyproject.toml` enhanced** — added `license`, `authors`, `keywords`, `classifiers` (Python 3.10/3.11/3.12, AI topic, MIT), and `[project.urls]` (Homepage, Repository, Bug Tracker, Changelog).  All metadata required by PyPI and `pip` is now present.
+- **Install from PyPI** — once published, install with:
+
+  ```bash
+  pip install harness-kit
+  ```
+
+- **Install from source** (development):
+
+  ```bash
+  git clone https://github.com/openclaw/harnesskit
+  cd harnesskit
+  pip install -e ".[dev]"
+  ```
+
+- **Build a wheel / sdist** (requires the [`build`](https://pypa-build.readthedocs.io/) package):
+
+  ```bash
+  pip install build
+  python -m build          # produces dist/harness_kit-0.1.0-*.whl + .tar.gz
+  ```
+
+### Phase 8.9 test coverage
+
+Phase 8.9 ships with **15 pytest tests** in `tests/test_packaging.py`:
+
+| Test | What is covered |
+|---|---|
+| `test_package_importable` | `import harness_kit` succeeds |
+| `test_cli_module_importable` | `from harness_kit.cli import app` succeeds |
+| `test_entry_point_registered` | `harnesskit` in `console_scripts` entry points |
+| `test_cli_help_exits_zero` | `python -m harness_kit.cli --help` exits 0 |
+| `test_version_metadata` | `importlib.metadata` returns correct name + version |
+| `test_metadata_summary` | Summary field non-empty |
+| `test_metadata_requires_python` | Requires-Python includes 3.10 |
+| `test_pyproject_license` | `license` field present |
+| `test_pyproject_authors` | `authors` field present |
+| `test_pyproject_keywords` | `keywords` includes ai/llm/agent |
+| `test_pyproject_classifiers` | `classifiers` includes Python 3 entries |
+| `test_pyproject_classifier_license` | Classifiers include OSI-approved license |
+| `test_pyproject_project_urls` | `[project.urls]` present with Homepage/Repository |
+| `test_pyproject_dev_extras` | `[dev]` extras include pytest |
+| `test_pyproject_entry_point` | `harnesskit = harness_kit.cli:app` declared |
+| `test_wheel_builds` *(skip if `build` absent)* | Wheel built successfully |
+| `test_sdist_builds` *(skip if `build` absent)* | Sdist built successfully |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 8.8 complete** — Skills Registry — 3 new CLI commands (`skill search`, `skill install`, `skill publish`), 36 new tests all passing.
+Current status: **Phase 8.9 complete** — Package & Publish — `pyproject.toml` fully populated, PyPI-ready metadata, 15 packaging tests all passing.

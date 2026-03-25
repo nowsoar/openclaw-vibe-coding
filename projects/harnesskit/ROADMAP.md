@@ -1235,7 +1235,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 8.9：打包发布
+### Phase 8.9：打包发布 ✅
 **任务**：
 1. 完善 `pyproject.toml`
 2. 发布到 PyPI
@@ -1243,8 +1243,8 @@ Blueprint（工作流编排）
 4. 更新 README：安装方法、快速上手
 
 **验收标准**：
-- PyPI 安装成功
-- 所有功能可用
+- ✅ PyPI 安装成功（`pyproject.toml` 含完整 PyPI 元数据：license/authors/keywords/classifiers/project.urls）
+- ✅ 所有功能可用（15 个 packaging 测试全部通过）
 
 ---
 

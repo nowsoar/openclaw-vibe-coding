@@ -8,6 +8,34 @@ version = "0.1.0"
 description = "Local AI Harness engineering toolkit — manage AI Agent runtimes like code"
 readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "HarnessKit Contributors"},
+]
+keywords = [
+    "ai",
+    "agent",
+    "harness",
+    "llm",
+    "prompt",
+    "cli",
+    "devtools",
+    "mlops",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer>=0.12.0",
     "rich>=13.0.0",
@@ -20,6 +48,12 @@ dependencies = [
     "fastapi>=0.100.0",
     "uvicorn>=0.23.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/openclaw/harnesskit"
+Repository = "https://github.com/openclaw/harnesskit"
+"Bug Tracker" = "https://github.com/openclaw/harnesskit/issues"
+Changelog = "https://github.com/openclaw/harnesskit/blob/main/ROADMAP.md"
 
 [project.scripts]
 harnesskit = "harness_kit.cli:app"
