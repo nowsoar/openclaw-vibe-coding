@@ -3122,8 +3122,92 @@ Phase 8.1 ships with **22 pytest tests** in `tests/test_web.py`:
 
 ---
 
+## Phase 8.2 — 前端框架搭建 (Frontend Framework)
+
+Phase 8.2 adds a full **HTMX + Alpine.js + TailwindCSS** web frontend to HarnessKit, served
+directly by FastAPI's static file layer. No build step, no Node.js — everything runs from CDN.
+
+### Starting the Web UI
+
+```bash
+harnesskit serve
+# Open http://localhost:7749 in your browser
+```
+
+### Frontend architecture
+
+| Component | Role |
+|-----------|------|
+| **HTMX** | Declarative HTTP requests; navigation swaps partial HTML into `#content` |
+| **Alpine.js** | Lightweight reactive data (skills list, loading state, search filter) |
+| **TailwindCSS CDN** | Utility-first styling, zero config |
+| **FastAPI `StaticFiles`** | Serves `harness_kit/web/static/` at `/static/` |
+
+### Page structure
+
+```
+http://localhost:7749/
+├── Header (HarnessKit title + global loading indicator + API Docs link)
+├── Sidebar navigation
+│   ├── Skills      → hx-get="/partials/skills"
+│   ├── Harness     → hx-get="/partials/harness"
+│   ├── Eval        → hx-get="/partials/eval"
+│   ├── Logs        → hx-get="/partials/logs"
+│   └── Settings    → hx-get="/partials/settings"
+└── Main content area (#content) — HTMX swaps partials here
+```
+
+### Navigation flow
+
+1. Browser loads `/` → FastAPI serves `index.html`
+2. HTMX fires `hx-get="/partials/skills"` on page load → skills partial injected into `#content`
+3. Each navigation click fires `hx-get="/partials/{section}"` → new partial replaces `#content`
+4. The **Skills** partial uses Alpine.js `fetch('/api/skills')` to load live data from the API
+
+### New API endpoints (Phase 8.2)
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Serve `index.html` frontend shell |
+| `GET /partials/{section}` | Return HTMX partial HTML for `skills \| harness \| eval \| logs \| settings` |
+| `GET /static/*` | Static assets (CSS, JS, images) |
+
+### File layout
+
+```
+harness_kit/web/
+├── __init__.py            # create_app() — FastAPI app factory
+└── static/
+    ├── index.html         # Main SPA shell
+    └── partials/
+        ├── skills.html    # Skills browser (Alpine.js + /api/skills)
+        ├── harness.html   # Harness list
+        ├── eval.html      # Eval dashboard
+        ├── logs.html      # Call log viewer
+        └── settings.html  # Config / quick links
+```
+
+### Phase 8.2 test coverage
+
+Phase 8.2 ships with **44 new pytest tests** in `tests/test_web_frontend.py`:
+
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| Root page (`GET /`) | 16 | 200 status, HTML content-type, TailwindCSS/HTMX/Alpine.js CDN tags, nav items, `hx-get`, `#content` target |
+| Partial: skills | 5 | 200, HTML, heading, Alpine.js fetch, `/api/skills` reference |
+| Partial: harness | 2 | 200, heading |
+| Partial: eval | 2 | 200, heading |
+| Partial: logs | 2 | 200, heading |
+| Partial: settings | 2 | 200, heading |
+| 404 partials | 2 | unknown section → 404, detail message |
+| Static file serving | 2 | root index.html, all 5 partials |
+| Phase 8.1 compat | 3 | `/api/skills`, `/openapi.json`, `/docs` still work |
+| Filesystem checks | 8 | static dir + index.html + partials dir + 5 partial files |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 8.1 complete** — Web 服务框架 — FastAPI + uvicorn server with `GET /api/skills`, `GET /api/skills/{name}`, `POST /api/skills/{name}/run`, CORS, and `harnesskit serve` CLI command; 22 new tests all passing.
+Current status: **Phase 8.2 complete** — 前端框架搭建 — HTMX + Alpine.js + TailwindCSS CDN frontend with 5-section navigation, HTMX dynamic partial loading, Alpine.js reactive skills list, and static file serving; 44 new tests all passing (66 total for Phase 8).

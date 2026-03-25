@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HarnessKit</title>
+
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.10"
+          integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5ViYgSibmK"
+          crossorigin="anonymous"></script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    /* Loading indicator for htmx requests */
+    .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+    .htmx-request .htmx-indicator { opacity: 1; }
+  </style>
+</head>
+<body class="h-full bg-gray-50" x-data="navState()" x-cloak>
+
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <header class="fixed top-0 left-0 right-0 z-10 flex items-center gap-3 bg-indigo-700 text-white px-6 py-3 shadow">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-200" fill="none"
+         viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+    </svg>
+    <span class="text-xl font-bold tracking-tight">HarnessKit</span>
+    <span class="ml-2 text-indigo-300 text-sm hidden sm:inline">AI Harness Management</span>
+
+    <div class="ml-auto flex items-center gap-2 text-indigo-200 text-sm">
+      <span class="htmx-indicator" id="global-loading">
+        <svg class="animate-spin h-4 w-4 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none"
+             viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        Loading…
+      </span>
+      <a href="/docs" target="_blank"
+         class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 transition text-white text-xs font-medium">
+        API Docs
+      </a>
+    </div>
+  </header>
+
+  <!-- ── Layout ─────────────────────────────────────────────────── -->
+  <div class="flex h-full pt-12">
+
+    <!-- ── Sidebar ──────────────────────────────────────────────── -->
+    <nav class="w-48 shrink-0 bg-white border-r border-gray-200 flex flex-col pt-4 shadow-sm">
+      <template x-for="item in navItems" :key="item.id">
+        <button
+          class="flex items-center gap-3 w-full text-left px-4 py-3 text-sm font-medium transition-colors"
+          :class="active === item.id
+            ? 'bg-indigo-50 text-indigo-700 border-r-2 border-indigo-600'
+            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'"
+          :hx-get="'/partials/' + item.id"
+          hx-target="#content"
+          hx-swap="innerHTML"
+          hx-indicator="#global-loading"
+          @click="active = item.id"
+          x-html="item.label"
+        ></button>
+      </template>
+
+      <div class="mt-auto px-4 py-3 border-t border-gray-100 text-xs text-gray-400">
+        v0.1.0 · Phase 8.2
+      </div>
+    </nav>
+
+    <!-- ── Main content ─────────────────────────────────────────── -->
+    <main
+      id="content"
+      class="flex-1 overflow-auto p-6"
+      hx-get="/partials/skills"
+      hx-trigger="load"
+      hx-swap="innerHTML"
+      hx-indicator="#global-loading"
+    >
+      <!-- Initial content loaded by HTMX on page load -->
+      <div class="flex items-center justify-center h-32 text-gray-400">
+        <svg class="animate-spin h-6 w-6 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        Loading…
+      </div>
+    </main>
+
+  </div>
+
+  <script>
+    function navState() {
+      return {
+        active: 'skills',
+        navItems: [
+          {
+            id: 'skills',
+            label: `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>Skills`
+          },
+          {
+            id: 'harness',
+            label: `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>Harness`
+          },
+          {
+            id: 'eval',
+            label: `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>Eval`
+          },
+          {
+            id: 'logs',
+            label: `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Logs`
+          },
+          {
+            id: 'settings',
+            label: `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Settings`
+          }
+        ]
+      }
+    }
+  </script>
+
+</body>
+</html>

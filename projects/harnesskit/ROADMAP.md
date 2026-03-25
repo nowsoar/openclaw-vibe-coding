@@ -1115,7 +1115,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 8.2：前端框架搭建
+### Phase 8.2：前端框架搭建 ✅
 **任务**：
 1. 前端技术选型：**HTMX + Alpine.js**（无需 React/Vue，配合 FastAPI 极简高效）
 2. 创建前端目录 `harness_kit/web/static/`
@@ -1124,9 +1124,10 @@ Blueprint（工作流编排）
 5. 静态文件挂载到 `/`
 
 **验收标准**：
-- 访问 `http://localhost:7749` 能看到完整页面框架
-- 导航正常跳转
-- HTMX 动态加载工作正常
+- ✅ 访问 `http://localhost:7749` 能看到完整页面框架
+- ✅ 导航正常跳转（`hx-get="/partials/{section}"` + `hx-target="#content"`）
+- ✅ HTMX 动态加载工作正常（默认加载 Skills 分区，Alpine.js fetch /api/skills）
+- ✅ 44 个 pytest 测试全部通过（CDN 标签、导航项、HTMX 属性、5 个 partial 路由、静态文件结构）
 
 ---
 

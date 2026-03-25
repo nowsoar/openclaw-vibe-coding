@@ -1,0 +1,105 @@
+<!-- Skills partial — loaded by HTMX into #content -->
+<div x-data="skillsSection()" x-init="load()" class="max-w-4xl">
+
+  <!-- Header row -->
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Skills</h1>
+    <span class="text-sm text-gray-500" x-text="items.length + ' skill(s) registered'"></span>
+  </div>
+
+  <!-- Search -->
+  <div class="mb-4">
+    <input
+      type="text"
+      x-model="query"
+      placeholder="Filter skills…"
+      class="w-full max-w-sm px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    />
+  </div>
+
+  <!-- Loading state -->
+  <div x-show="loading" class="flex items-center gap-2 text-gray-400 py-10">
+    <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    </svg>
+    Loading skills…
+  </div>
+
+  <!-- Error state -->
+  <div x-show="error" class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm" x-text="error"></div>
+
+  <!-- Empty state -->
+  <div x-show="!loading && !error && filtered.length === 0"
+       class="text-center py-16 text-gray-400">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-3 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+    </svg>
+    <p class="font-medium">No skills found</p>
+    <p class="text-sm mt-1">Run <code class="bg-gray-100 px-1 rounded">harnesskit skill save --file skill.yaml</code> to add one.</p>
+  </div>
+
+  <!-- Skills grid -->
+  <div x-show="!loading && !error && filtered.length > 0"
+       class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <template x-for="s in filtered" :key="s.name">
+      <div class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+        <div class="flex items-start justify-between mb-2">
+          <h3 class="font-semibold text-gray-900 text-sm" x-text="s.name"></h3>
+          <span class="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-mono"
+                x-text="s.version || 'n/a'"></span>
+        </div>
+        <p class="text-xs text-gray-500 line-clamp-2" x-text="s.description || 'No description'"></p>
+        <div class="mt-3 flex gap-2" x-show="s.trigger">
+          <span class="text-xs text-gray-400 italic truncate" x-text="'Trigger: ' + s.trigger"></span>
+        </div>
+        <div class="mt-3 pt-3 border-t border-gray-100 flex gap-2">
+          <button
+            class="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-500 transition"
+            :hx-get="'/api/skills/' + s.name"
+            hx-target="#skill-detail"
+            hx-swap="innerHTML"
+            @click="selected = s.name"
+          >Details</button>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Skill detail panel -->
+  <div id="skill-detail" class="mt-6"></div>
+
+</div>
+
+<script>
+function skillsSection() {
+  return {
+    items: [],
+    loading: true,
+    error: null,
+    query: '',
+    selected: null,
+    get filtered() {
+      if (!this.query) return this.items;
+      const q = this.query.toLowerCase();
+      return this.items.filter(s =>
+        (s.name || '').toLowerCase().includes(q) ||
+        (s.description || '').toLowerCase().includes(q)
+      );
+    },
+    async load() {
+      this.loading = true;
+      this.error = null;
+      try {
+        const res = await fetch('/api/skills');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        this.items = await res.json();
+      } catch (e) {
+        this.error = 'Failed to load skills: ' + e.message;
+      } finally {
+        this.loading = false;
+      }
+    }
+  }
+}
+</script>

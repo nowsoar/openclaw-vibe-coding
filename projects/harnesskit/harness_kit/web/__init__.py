@@ -1,4 +1,4 @@
-"""HarnessKit Web API — FastAPI server for Phase 8.1."""
+"""HarnessKit Web — FastAPI server + HTMX/Alpine.js frontend (Phase 8.2)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,17 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+# ---------------------------------------------------------------------------
+# Valid frontend sections
+# ---------------------------------------------------------------------------
+
+_SECTIONS = {"skills", "harness", "eval", "logs", "settings"}
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +87,7 @@ def create_app(base: Path | None = None) -> FastAPI:
         return _skill_mod.load_skill(name, base=base_path)
 
     # ------------------------------------------------------------------
-    # Routes
+    # API Routes
     # ------------------------------------------------------------------
 
     @api.get("/api/skills", summary="List all skills")
@@ -156,5 +166,28 @@ def create_app(base: Path | None = None) -> FastAPI:
             skill=skill_data.get("name", name),
             version=skill_data.get("version", ""),
         )
+
+    # ------------------------------------------------------------------
+    # Frontend routes (Phase 8.2)
+    # ------------------------------------------------------------------
+
+    # Mount static files under /static/
+    if _STATIC_DIR.exists():
+        api.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+    @api.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def index() -> FileResponse:
+        """Serve the main SPA shell."""
+        return FileResponse(str(_STATIC_DIR / "index.html"))
+
+    @api.get("/partials/{section}", response_class=HTMLResponse, include_in_schema=False)
+    def get_partial(section: str) -> FileResponse:
+        """Serve an HTMX partial page for the given section."""
+        if section not in _SECTIONS:
+            raise HTTPException(status_code=404, detail=f"Section '{section}' not found")
+        partial_file = _STATIC_DIR / "partials" / f"{section}.html"
+        if not partial_file.exists():
+            raise HTTPException(status_code=404, detail=f"Partial '{section}' not found")
+        return FileResponse(str(partial_file))
 
     return api
