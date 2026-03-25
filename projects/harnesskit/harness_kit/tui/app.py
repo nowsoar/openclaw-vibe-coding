@@ -8,6 +8,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
 
+from harness_kit.tui.prompt_diff import PromptDiffScreen
 from harness_kit.tui.skill_browser import SkillBrowserScreen
 
 
@@ -24,6 +25,15 @@ NAV_ITEMS: list[tuple[str, str, str]] = [
         "可复用的 AI 能力单元。每个 Skill 封装了 Prompt、Schema、Rule 和 Context，\n"
         "可独立运行，也可组合进 Harness。\n\n"
         "[dim]命令：[/dim] harnesskit skill save / show / list / run / diff / clone",
+    ),
+    (
+        "prompts",
+        "📝  Prompts",
+        "[bold]Prompt Diff 可视化[/bold]\n\n"
+        "并排对比两个 Prompt 版本的差异。\n"
+        "删除行高亮为红色，新增行高亮为绿色，支持行内字符级 diff。\n\n"
+        "[dim]按 Enter 进入 Prompt Diff 浏览器[/dim]\n\n"
+        "[dim]命令：[/dim] harnesskit prompt save / show / list / diff / history",
     ),
     (
         "harnesses",
@@ -180,7 +190,7 @@ class HelpOverlay(Container):
             yield Label("")
             yield Label("[cyan]j / ↓[/cyan]    向下移动")
             yield Label("[cyan]k / ↑[/cyan]    向上移动")
-            yield Label("[cyan]Enter[/cyan]    进入 / 选择  （Skills → Skill 浏览器）")
+            yield Label("[cyan]Enter[/cyan]    进入 / 选择  （Skills → Skill 浏览器 | Prompts → Prompt Diff）")
             yield Label("[cyan]Esc[/cyan]      返回上一屏")
             yield Label("[cyan]?[/cyan]        显示 / 关闭帮助")
             yield Label("[cyan]q[/cyan]        退出 HarnessKit TUI")
@@ -189,6 +199,10 @@ class HelpOverlay(Container):
             yield Label("[cyan]r[/cyan]        运行 Skill（显示命令）")
             yield Label("[cyan]d[/cyan]        对比版本（显示命令）")
             yield Label("[cyan]e[/cyan]        编辑 Skill（显示命令）")
+            yield Label("")
+            yield Label("[bold]Prompt Diff 快捷键[/bold]")
+            yield Label("[cyan]j / k[/cyan]    同步滚动 diff 面板")
+            yield Label("[cyan]Esc[/cyan]      返回主菜单")
             yield Label("")
             yield Label("[dim]按任意键关闭[/dim]")
 
@@ -290,7 +304,8 @@ class HarnessKitApp(App):
         """Activate the currently highlighted nav item.
 
         Pressing Enter on the *Skills* section opens the dedicated
-        :class:`SkillBrowserScreen`; all other sections simply refresh
+        :class:`SkillBrowserScreen`; pressing Enter on *Prompts* opens the
+        :class:`PromptDiffScreen`; all other sections simply refresh
         the description in the content panel.
         """
         idx = self._selected_index
@@ -299,17 +314,25 @@ class HarnessKitApp(App):
             if item_id == "skills":
                 self.push_screen(SkillBrowserScreen())
                 return
+            if item_id == "prompts":
+                self.push_screen(PromptDiffScreen())
+                return
         self._update_content(idx)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle list item selection (triggered by Enter in the ListView).
 
         The ListView consumes the Enter key to fire this event before the
-        App-level binding runs.  We use it to navigate into the Skill browser.
+        App-level binding runs.  We use it to navigate into the Skill browser
+        or the Prompt Diff screen.
         """
         idx = self._selected_index
-        if 0 <= idx < len(NAV_ITEMS) and NAV_ITEMS[idx][0] == "skills":
-            self.push_screen(SkillBrowserScreen())
+        if 0 <= idx < len(NAV_ITEMS):
+            item_id = NAV_ITEMS[idx][0]
+            if item_id == "skills":
+                self.push_screen(SkillBrowserScreen())
+            elif item_id == "prompts":
+                self.push_screen(PromptDiffScreen())
 
     def action_toggle_help(self) -> None:
         self._help_visible = not self._help_visible

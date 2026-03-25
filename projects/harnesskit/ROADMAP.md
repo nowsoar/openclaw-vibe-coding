@@ -1040,7 +1040,7 @@ Blueprint（工作流编排）
 
 ---
 
-### Phase 7.3：Prompt Diff 可视化
+### Phase 7.3：Prompt Diff 可视化 ✅
 **任务**：
 1. 选择两个 Prompt 版本
 2. 并排对比显示（左旧右新）
@@ -1048,8 +1048,8 @@ Blueprint（工作流编排）
 4. 支持行内 diff
 
 **验收标准**：
-- diff 显示清晰
-- 高亮准确
+- ✅ diff 显示清晰
+- ✅ 高亮准确
 
 ---
 

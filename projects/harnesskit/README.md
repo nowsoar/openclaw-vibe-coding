@@ -2799,8 +2799,77 @@ Phase 7.2 ships with **27 pytest tests** in `tests/test_tui_skill_browser.py`:
 
 ---
 
+## Phase 7.3 — Prompt Diff 可视化 (Prompt Diff Visualization)
+
+Phase 7.3 adds an interactive side-by-side **Prompt Diff** screen inside the TUI — select any
+two prompt versions and instantly see what changed, with line-level colour coding and
+character-level inline diff highlighting.
+
+### Launch
+
+```bash
+harnesskit tui          # launch TUI
+# → Navigate to "📝  Prompts" with j/k
+# → Press Enter → PromptDiffScreen opens
+# → Esc to return
+```
+
+### PromptDiffScreen layout
+
+```
+╔═ HarnessKit ══════════════════════════════════════════════════════╗
+║ 📝 Prompt                │ ─── my-prompt@v0.0.1 ─── │ ─── my-prompt@v0.0.2 ─── ║
+║ ─────────────────────    │                            │                            ║
+║ my-prompt  v0.0.2        │ [dim]common line[/dim]     │ [dim]common line[/dim]     ║
+║                          │ [red]- old text[/red]      │ [green]+ new text[/green]  ║
+║ 旧版本 (左)               │ [dim]context[/dim]         │ [dim]context[/dim]         ║
+║  v0.0.1 ✓               │                            │                            ║
+║                          │                            │                            ║
+║ 新版本 (右)               │                            │                            ║
+║  v0.0.2 ✓               │                            │                            ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
+**Left sidebar** — prompt list + old/new version selectors.  Selecting a prompt or version
+immediately refreshes the diff.
+
+**Right area** — two side-by-side panes:
+| Pane | Content |
+|------|---------|
+| Left (old) | Version A — removed lines in **red** (`-`) |
+| Right (new) | Version B — added lines in **green** (`+`) |
+| Both | Unchanged context lines in dim colour |
+
+**Inline diff** — for lines that changed between versions, character-level differences are
+additionally highlighted with `bold red` (old side) / `bold green` (new side).
+
+### Keyboard shortcuts (PromptDiffScreen)
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Scroll both diff panes down simultaneously |
+| `k` / `↑` | Scroll both diff panes up simultaneously |
+| `Esc` | Return to main TUI navigation |
+
+Selecting a different prompt or version in the left sidebar updates the diff in real time —
+no extra key press needed.
+
+### Test coverage
+
+Phase 7.3 ships with **33 pytest tests** in `tests/test_tui_prompt_diff.py`:
+
+| Test Category | Count | Coverage |
+|---|---|---|
+| Pure helper functions | 13 | `_escape_markup`, `_inline_diff`, `build_diff_panes` (empty, deleted, added, unchanged, inline, labels) |
+| Module import & structure | 6 | package import, tui export, widget import |
+| Instantiation & bindings | 4 | basic, base_path injection, escape, j/k bindings |
+| Textual pilot (async) | 8 | compose, empty state, prompt loading, single/two version defaults, pane population, label display, escape nav, j/k scroll |
+| Main app integration | 2 | Enter on Prompts nav → PromptDiffScreen pushed |
+
+---
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 7.2 complete** — Skill 浏览器 — interactive Skill browser with real-time search/filter, two-pane layout (list + detail), r/d/e action hints, notice overlay, Esc back navigation; 27 new tests all passing (1286 total).
+Current status: **Phase 7.3 complete** — Prompt Diff 可视化 — side-by-side prompt version diff with line-level colour coding (red for deletions, green for additions) and character-level inline diff highlighting; 33 new tests all passing.
