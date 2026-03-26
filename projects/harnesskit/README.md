@@ -48,6 +48,12 @@ Blueprint (workflow orchestration)
 | 📦 Export | `export mcp` — expose Skills as MCP Tools for Claude/Cursor |
 | 🗂️ Skills Registry | `skill install / publish / search` — `.hsk` portable skill packages |
 
+<p align="center">
+  <a href="QUICKSTART.md">🚀 新手？先看快速上手指南</a> ·
+  <a href="README.md">Full Docs</a> ·
+  <a href="ROADMAP.md">Roadmap</a>
+</p>
+
 ---
 
 ## Installation
