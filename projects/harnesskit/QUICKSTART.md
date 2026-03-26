@@ -113,6 +113,17 @@ base_url: https://你的接口地址/v1
 log_level: INFO
 ```
 
+> ⚠️ **常见错误：** `base_url` 只写到基础路径，**不要** 加 `/chat/completions`。
+> SDK 会自动拼接后缀，手动加了会导致 `404 page not found`。
+>
+> ```yaml
+> # ❌ 错误
+> base_url: https://api.example.com/v1/chat/completions
+>
+> # ✅ 正确
+> base_url: https://api.example.com/v1
+> ```
+
 **真实示例（DeepSeek）：**
 
 ```yaml
@@ -392,6 +403,18 @@ harnesskit serve --port 8080  # 自定义端口
 ---
 
 ## 常见问题
+
+**Q：运行报错 "404 page not found"？**
+
+`base_url` 多写了 `/chat/completions`。SDK 会自动追加这段路径，手动写进去会拼出错误地址：
+
+```yaml
+# ❌ 错误
+base_url: https://api.example.com/v1/chat/completions
+
+# ✅ 正确
+base_url: https://api.example.com/v1
+```
 
 **Q：运行 Skill 报错 "No API key configured"？**
 
