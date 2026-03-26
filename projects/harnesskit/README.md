@@ -1,10 +1,52 @@
 # HarnessKit
 
-**Local AI Harness engineering toolkit** — manage AI Agent runtimes like code.
+<p align="center">
+  <b>Local AI Harness engineering toolkit — manage AI Agent runtimes like code.</b>
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/harness-kit/"><img src="https://img.shields.io/pypi/v/harness-kit?color=blue&label=PyPI" alt="PyPI"></a>
+  <a href="https://pypi.org/project/harness-kit/"><img src="https://img.shields.io/pypi/pyversions/harness-kit" alt="Python 3.10+"></a>
+  <img src="https://img.shields.io/badge/tests-1728%20passing-brightgreen" alt="1728 tests passing">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+  <img src="https://img.shields.io/badge/phase-8.9%20complete-blue" alt="Phase 8.9">
+</p>
+
+---
 
 > `coding agent = AI model(s) + harness`
 
-HarnessKit provides a CLI to create, version, and manage the "OS layer" of your AI Agents: prompts, schemas, context templates, rules, skills, harnesses, and blueprints — all stored locally, git-trackable, and composable.
+Your AI agent is only as good as what surrounds it: prompts, schemas, rules, context templates, skills, and harnesses. HarnessKit gives you a **local-first CLI** to version, compose, test, and operate all of that — like code, not config files scattered across chat windows.
+
+```
+Agent (persistent identity)
+  └── Harness (full runtime configuration)
+        ├── Skills (reusable capability units)
+        │     ├── Prompt    — versioned system/user prompts
+        │     ├── Schema    — function-calling tool definitions
+        │     ├── Rule      — hard constraints + soft guidance
+        │     └── Context   — Jinja2 slot templates
+        ├── Model Config    — provider, model, temperature, …
+        ├── Memory Policy   — session / harness / global scope
+        └── Constraints     — global rules, cost limits, timeouts
+
+Blueprint (workflow orchestration)
+  └── [deterministic shell] → [Skill/Harness LLM call] → [deterministic shell] → …
+```
+
+**What you get:**
+
+| Area | Commands |
+|------|----------|
+| 🔧 Asset management | `prompt`, `schema`, `context`, `rule` — all versioned, diffable |
+| ⚡ Skill execution | `skill run` — assemble prompt, call LLM, enforce rules, log everything |
+| 🏗️ Harness & Agent | `harness run`, `agent run` — multi-skill configs + interactive REPL |
+| 🔀 Blueprint workflows | `blueprint run` — shell + LLM hybrid pipelines |
+| 🧪 Eval engine | `eval run / compare / benchmark` — A/B test versions, multi-model benchmark |
+| 📊 Observability | `logs`, `cost`, `stats`, `health` — full call-log pipeline |
+| 🌐 Web Playground | `serve` — FastAPI + HTMX UI, Prompt Playground, A/B compare, Eval Dashboard |
+| 📦 Export | `export mcp` — expose Skills as MCP Tools for Claude/Cursor |
+| 🗂️ Skills Registry | `skill install / publish / search` — `.hsk` portable skill packages |
 
 ---
 
@@ -19,8 +61,8 @@ pip install harness-kit
 Or install from source:
 
 ```bash
-git clone <repo>
-cd harnesskit
+git clone https://github.com/nowsoar/openclaw-vibe-coding.git
+cd openclaw-vibe-coding/projects/harnesskit
 pip install .
 ```
 
@@ -838,10 +880,6 @@ Total violations recorded in call logs: 4
 ```
 
 This command reads `.harness/logs/calls.jsonl` to aggregate counts. It shows all rules (including those with zero violations) and highlights any rules that were deleted after violations were recorded.
-
----
-
-
 
 ---
 
@@ -2528,8 +2566,8 @@ harnesskit prompt show my-prompt@prod     # tag alias (Phase 1.6+)
 ## Development
 
 ```bash
-git clone <repo>
-cd harnesskit
+git clone https://github.com/nowsoar/openclaw-vibe-coding.git
+cd openclaw-vibe-coding/projects/harnesskit
 pip install -e ".[dev]"
 pytest
 ```
@@ -3728,4 +3766,33 @@ Phase 8.9 ships with **15 pytest tests** in `tests/test_packaging.py`:
 
 See [ROADMAP.md](ROADMAP.md) for the full 8-phase development plan.
 
-Current status: **Phase 8.9 complete** — Package & Publish — `pyproject.toml` fully populated, PyPI-ready metadata, 15 packaging tests all passing.
+**Current status: Phase 8.9 complete ✅** — all 1 728 tests passing.
+
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 1 | Primitive assets (prompt / schema / context / rule) + `doctor` | ✅ |
+| 2 | Skills — versioned runnable units + rule enforcement | ✅ |
+| 3 | Harness, Agent, Memory | ✅ |
+| 4 | Blueprint workflow (deterministic + agentic steps) | ✅ |
+| 5 | Eval engine — A/B compare, multi-model benchmark, CI mode | ✅ |
+| 6 | Observability — logs, cost, stats, improvement flywheel, health | ✅ |
+| 7 | TUI — Skill browser, Prompt Diff, Eval viz, live log stream | ✅ |
+| 8 | Web Playground, MCP export, Skills Registry, PyPI release | ✅ |
+
+---
+
+## Contributing
+
+Contributions, issues, and feature requests are welcome!
+
+1. Fork the repo and create a feature branch
+2. Write tests for any new behaviour — run `pytest` to confirm all pass
+3. Submit a pull request against `main`
+
+Repository: <https://github.com/nowsoar/openclaw-vibe-coding>
+
+---
+
+## License
+
+MIT © HarnessKit Contributors
