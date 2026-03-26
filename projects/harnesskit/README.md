@@ -60,11 +60,13 @@ Blueprint (workflow orchestration)
 
 Requires Python 3.10+.
 
+**Install from GitHub (recommended):**
+
 ```bash
-pip install harness-kit
+pip install "git+https://github.com/nowsoar/openclaw-vibe-coding.git#subdirectory=projects/harnesskit"
 ```
 
-Or install from source:
+Or clone and install locally:
 
 ```bash
 git clone https://github.com/nowsoar/openclaw-vibe-coding.git

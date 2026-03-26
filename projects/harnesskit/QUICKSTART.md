@@ -40,8 +40,18 @@
 
 需要先安装 Python 3.10 或更高版本。
 
+### 方式 A：从 GitHub 安装（推荐）
+
 ```bash
-pip install harness-kit
+pip install "git+https://github.com/nowsoar/openclaw-vibe-coding.git#subdirectory=projects/harnesskit"
+```
+
+### 方式 B：克隆到本地安装
+
+```bash
+git clone https://github.com/nowsoar/openclaw-vibe-coding.git
+cd openclaw-vibe-coding/projects/harnesskit
+pip install .
 ```
 
 安装完成后，验证一下：
