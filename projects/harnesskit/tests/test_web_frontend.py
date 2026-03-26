@@ -56,17 +56,19 @@ class TestIndexPage:
         html = _html(client, "/")
         assert "HarnessKit" in html
 
-    def test_tailwindcss_cdn_included(self, client: TestClient) -> None:
+    def test_tailwindcss_included(self, client: TestClient) -> None:
         html = _html(client, "/")
-        assert "cdn.tailwindcss.com" in html
+        # Accept both CDN and local bundled path
+        assert "tailwind" in html.lower()
 
-    def test_htmx_cdn_included(self, client: TestClient) -> None:
+    def test_htmx_included(self, client: TestClient) -> None:
         html = _html(client, "/")
-        assert "htmx.org" in html
+        # Accept both CDN and local bundled path
+        assert "htmx" in html.lower()
 
-    def test_alpinejs_cdn_included(self, client: TestClient) -> None:
+    def test_alpinejs_included(self, client: TestClient) -> None:
         html = _html(client, "/")
-        assert "alpinejs" in html
+        assert "alpine" in html.lower()
 
     def test_content_div_present(self, client: TestClient) -> None:
         """HTMX loads partials into id='content'."""
@@ -132,13 +134,18 @@ class TestPartialSkills:
         assert "skill" in html.lower()
 
     def test_uses_alpinejs_fetch(self, client: TestClient) -> None:
-        """Skills partial should use Alpine.js / fetch to load API data."""
-        html = _html(client, "/partials/skills")
-        assert "fetch" in html or "hx-get" in html
+        """Skills Alpine component (now in index.html) should use fetch to load API data."""
+        # Script moved from partial to index.html for HTMX compatibility
+        index_html = _html(client, "/")
+        partial_html = _html(client, "/partials/skills")
+        combined = index_html + partial_html
+        assert "fetch" in combined or "hx-get" in combined
 
     def test_references_api_skills(self, client: TestClient) -> None:
-        html = _html(client, "/partials/skills")
-        assert "/api/skills" in html
+        # Script moved from partial to index.html for HTMX compatibility
+        index_html = _html(client, "/")
+        partial_html = _html(client, "/partials/skills")
+        assert "/api/skills" in index_html + partial_html
 
 
 class TestPartialHarness:

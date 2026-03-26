@@ -388,12 +388,16 @@ class TestComparePartialHTMLStructure:
         assert "compare-diff-legend" in r.text
 
     def test_partial_references_versions_api(self, client: TestClient) -> None:
-        r = client.get("/partials/compare")
-        assert "/versions" in r.text
+        # Script moved to index.html for HTMX compatibility — check combined content
+        partial = client.get("/partials/compare").text
+        index = client.get("/").text
+        assert "/versions" in partial + index
 
     def test_partial_references_compare_api(self, client: TestClient) -> None:
-        r = client.get("/partials/compare")
-        assert "/api/compare" in r.text
+        # Script moved to index.html for HTMX compatibility — check combined content
+        partial = client.get("/partials/compare").text
+        index = client.get("/").text
+        assert "/api/compare" in partial + index
 
     def test_partial_contains_alpine_component(self, client: TestClient) -> None:
         r = client.get("/partials/compare")

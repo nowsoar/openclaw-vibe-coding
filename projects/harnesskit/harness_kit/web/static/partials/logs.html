@@ -69,27 +69,3 @@
   </div>
 
 </div>
-
-<script>
-function logsSection() {
-  return {
-    entries: [],
-    loading: true,
-    formatTime(ts) {
-      if (!ts) return '—';
-      try { return new Date(ts).toLocaleTimeString(); } catch(_) { return ts; }
-    },
-    async load() {
-      this.loading = true;
-      try {
-        const res = await fetch('/api/logs?limit=50');
-        if (res.ok) this.entries = await res.json();
-      } catch (_) {
-        // API not yet wired — show empty state
-      } finally {
-        this.loading = false;
-      }
-    }
-  }
-}
-</script>

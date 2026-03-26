@@ -375,16 +375,18 @@ class TestBlueprintsPartialHTMLStructure:
         assert "blueprintsSection()" in html
 
     def test_alpine_api_calls(self) -> None:
-        html = self._read_html()
-        assert "/api/blueprints" in html
+        # Script moved from partial to index.html for HTMX compatibility
+        combined = self._read_html() + (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        assert "/api/blueprints" in combined
 
     def test_dry_run_api_call(self) -> None:
         html = self._read_html()
         assert "dry-run" in html
 
     def test_graph_api_call(self) -> None:
-        html = self._read_html()
-        assert "/graph" in html
+        # Script moved from partial to index.html for HTMX compatibility
+        combined = self._read_html() + (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        assert "/graph" in combined
 
     def test_phase_badge(self) -> None:
         html = self._read_html()

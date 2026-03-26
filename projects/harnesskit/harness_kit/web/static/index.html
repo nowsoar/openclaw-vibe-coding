@@ -6,15 +6,13 @@
   <title>HarnessKit</title>
 
   <!-- TailwindCSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/js/tailwind.js"></script>
 
   <!-- HTMX -->
-  <script src="https://unpkg.com/htmx.org@1.9.10"
-          integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5ViYgSibmK"
-          crossorigin="anonymous"></script>
+  <script src="/static/js/htmx.min.js"></script>
 
   <!-- Alpine.js -->
-  <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+  <script defer src="/static/js/alpinejs.min.js"></script>
 
   <style>
     [x-cloak] { display: none !important; }
@@ -136,5 +134,572 @@
     }
   </script>
 
+
+  <!-- Alpine.js component functions (extracted from partials) -->
+  <script>
+// ── blueprints.html ──
+if (!window._mermaidLoaded) {
+    window._mermaidLoaded = true;
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+    s.onload = function() { mermaid.initialize({ startOnLoad: false, theme: 'default' }); };
+    document.head.appendChild(s);
+  }
+
+// ── blueprints.html ──
+function blueprintsSection() {
+  return {
+    blueprints: [],
+    search: '',
+    selected: null,
+    graphLoading: false,
+    dryRunLoading: false,
+    dryRunError: '',
+    stepPlan: [],
+
+    get filtered() {
+      if (!this.search) return this.blueprints;
+      const q = this.search.toLowerCase();
+      return this.blueprints.filter(b =>
+        b.name.toLowerCase().includes(q) || (b.description || '').toLowerCase().includes(q)
+      );
+    },
+
+    async load() {
+      try {
+        const res = await fetch('/api/blueprints');
+        this.blueprints = await res.json();
+      } catch (e) {
+        this.blueprints = [];
+      }
+    },
+
+    async selectBlueprint(name) {
+      this.stepPlan = [];
+      this.dryRunError = '';
+      this.graphLoading = true;
+      try {
+        const [detailRes, graphRes] = await Promise.all([
+          fetch('/api/blueprints/' + encodeURIComponent(name)),
+          fetch('/api/blueprints/' + encodeURIComponent(name) + '/graph'),
+        ]);
+        this.selected = await detailRes.json();
+        const graphData = await graphRes.json();
+        await this.$nextTick();
+        this.renderGraph(graphData.mermaid);
+      } catch (e) {
+        this.dryRunError = 'Failed to load blueprint: ' + e.message;
+      } finally {
+        this.graphLoading = false;
+      }
+    },
+
+    async renderGraph(mermaidDef) {
+      const container = document.getElementById('blueprint-graph-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const tryRender = async (attempts) => {
+        if (attempts <= 0) {
+          container.innerHTML = '<pre class="text-xs text-gray-500 p-2">' +
+            mermaidDef.replace(/</g, '&lt;') + '</pre>';
+          return;
+        }
+        if (typeof mermaid === 'undefined') {
+          await new Promise(r => setTimeout(r, 300));
+          return tryRender(attempts - 1);
+        }
+        try {
+          const id = 'bp-graph-' + Date.now();
+          const { svg } = await mermaid.render(id, mermaidDef);
+          container.innerHTML = svg;
+        } catch (e) {
+          container.innerHTML = '<pre class="text-xs text-gray-500 p-2 whitespace-pre-wrap">' +
+            mermaidDef.replace(/</g, '&lt;') + '</pre>';
+        }
+      };
+      await tryRender(10);
+    },
+
+    async dryRun() {
+      if (!this.selected) return;
+      this.dryRunLoading = true;
+      this.dryRunError = '';
+      this.stepPlan = [];
+
+      try {
+        const res = await fetch('/api/blueprints/' + encodeURIComponent(this.selected.name) + '/dry-run', {
+          method: 'POST',
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          this.dryRunError = err.detail || 'Dry run failed';
+          return;
+        }
+        const data = await res.json();
+        // Animate steps one-by-one
+        this.stepPlan = data.steps.map(s => ({ ...s, status: 'pending' }));
+        for (let i = 0; i < this.stepPlan.length; i++) {
+          this.stepPlan[i].status = 'running';
+          // Force Alpine reactivity by creating new array reference
+          this.stepPlan = [...this.stepPlan];
+          await new Promise(r => setTimeout(r, 400));
+          this.stepPlan[i].status = 'done';
+          this.stepPlan = [...this.stepPlan];
+        }
+      } catch (e) {
+        this.dryRunError = 'Request failed: ' + e.message;
+      } finally {
+        this.dryRunLoading = false;
+      }
+    },
+  };
+}
+
+// ── compare.html ──
+function compareSection() {
+  return {
+    // state
+    skills: [],
+    skillName: '',
+    versions: [],
+    versionA: '',
+    versionB: '',
+    model: '',
+    detail: null,
+    inputs: {},
+    loadError: null,
+    running: false,
+    runError: null,
+    resultA: null,
+    resultB: null,
+
+    async loadSkills() {
+      try {
+        const r = await fetch('/api/skills');
+        this.skills = r.ok ? await r.json() : [];
+      } catch (e) {
+        this.loadError = 'Failed to load skills: ' + e.message;
+      }
+    },
+
+    async onSkillChange() {
+      this.versions = [];
+      this.versionA = '';
+      this.versionB = '';
+      this.detail = null;
+      this.inputs = {};
+      this.resultA = null;
+      this.resultB = null;
+      this.runError = null;
+      if (!this.skillName) return;
+
+      // Load versions
+      try {
+        const r = await fetch('/api/skills/' + encodeURIComponent(this.skillName) + '/versions');
+        if (r.ok) {
+          this.versions = await r.json();
+          // Default: oldest as A, newest as B (or both same if only one)
+          this.versionA = this.versions[0] || '';
+          this.versionB = this.versions[this.versions.length - 1] || '';
+        }
+      } catch (e) { /* ignore */ }
+
+      // Load detail for inputs
+      try {
+        const r = await fetch('/api/skills/' + encodeURIComponent(this.skillName));
+        if (r.ok) {
+          this.detail = await r.json();
+          for (const inp of (this.detail.inputs || [])) {
+            if (inp.default !== undefined && inp.default !== null) {
+              this.inputs[inp.name] = String(inp.default);
+            }
+          }
+        }
+      } catch (e) { /* ignore */ }
+    },
+
+    async runCompare() {
+      this.running = true;
+      this.runError = null;
+      this.resultA = null;
+      this.resultB = null;
+
+      try {
+        const r = await fetch('/api/compare', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            skill: this.skillName,
+            version_a: this.versionA,
+            version_b: this.versionB,
+            inputs: this.inputs,
+            model: this.model || null,
+          }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          this.runError = err.detail || ('HTTP ' + r.status);
+        } else {
+          const data = await r.json();
+          this.resultA = data.result_a;
+          this.resultB = data.result_b;
+        }
+      } catch (e) {
+        this.runError = 'Network error: ' + e.message;
+      } finally {
+        this.running = false;
+      }
+    },
+
+    // Simple word-level diff highlighting.
+    // side = 'a' | 'b': highlights words unique to THIS side in green.
+    diffHtml(thisText, otherText, side) {
+      const escape = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if (!thisText) return '';
+      if (thisText === otherText) return escape(thisText);
+
+      const wordsA = thisText.split(/(\s+)/);
+      const wordsB = otherText.split(/(\s+)/);
+      const setB = new Set(wordsB.filter(w => w.trim()));
+
+      return wordsA.map(token => {
+        if (!token.trim()) return escape(token); // whitespace — pass through
+        const inOther = setB.has(token);
+        if (!inOther) {
+          // unique to this side — highlight green
+          return '<mark class="bg-green-100 text-green-800 rounded px-0.5">' + escape(token) + '</mark>';
+        }
+        return escape(token);
+      }).join('');
+    },
+  };
+}
+
+// ── eval.html ──
+function evalSection() {
+  return {
+    suites: [],
+    results: [],
+    trend: [],
+    loading: true,
+    suiteSearch: '',
+    runSuiteName: '',
+    runPanelOpen: false,
+    runTarget: '',
+    running: false,
+    runError: null,
+    runSuccess: null,
+
+    get filteredSuites() {
+      const q = this.suiteSearch.toLowerCase();
+      if (!q) return this.suites;
+      return this.suites.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        (s.description || '').toLowerCase().includes(q)
+      );
+    },
+
+    get totalPassed() {
+      return this.results.reduce((acc, r) => acc + (r.summary?.passed ?? 0), 0);
+    },
+
+    get totalFailed() {
+      return this.results.reduce((acc, r) => acc + (r.summary?.failed ?? 0), 0);
+    },
+
+    get trendPoints() {
+      if (!this.trend.length) return '';
+      const w = Math.max(400, this.trend.length * 28);
+      const step = this.trend.length > 1 ? (w - 30) / (this.trend.length - 1) : 0;
+      return this.trend.map((pt, i) => {
+        const x = 20 + i * step;
+        const y = 70 - pt.pass_rate * 60;
+        return `${x},${y}`;
+      }).join(' ');
+    },
+
+    get trendDots() {
+      if (!this.trend.length) return [];
+      const w = Math.max(400, this.trend.length * 28);
+      const step = this.trend.length > 1 ? (w - 30) / (this.trend.length - 1) : 0;
+      return this.trend.map((pt, i) => ({
+        x: 20 + i * step,
+        y: 70 - pt.pass_rate * 60,
+        rate: pt.pass_rate,
+        label: `${pt.target} (${Math.round(pt.pass_rate * 100)}%) ${pt.timestamp?.slice(0,10) ?? ''}`,
+      }));
+    },
+
+    passRateColor(summary) {
+      const total = summary?.total ?? 0;
+      const passed = summary?.passed ?? 0;
+      if (total === 0) return 'text-gray-400';
+      const rate = passed / total;
+      if (rate >= 1) return 'text-green-600';
+      if (rate >= 0.7) return 'text-yellow-600';
+      return 'text-red-600';
+    },
+
+    passRatePct(summary) {
+      const total = summary?.total ?? 0;
+      const passed = summary?.passed ?? 0;
+      if (total === 0) return '—';
+      return Math.round(passed / total * 100) + '%';
+    },
+
+    formatTime(ts) {
+      if (!ts) return '—';
+      try {
+        return new Date(ts).toLocaleString(undefined, {
+          month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        });
+      } catch { return ts.slice(0, 16); }
+    },
+
+    openRunPanel(suiteName) {
+      if (this.runSuiteName === suiteName && this.runPanelOpen) {
+        this.runPanelOpen = false;
+      } else {
+        this.runSuiteName = suiteName;
+        this.runPanelOpen = true;
+        this.runError = null;
+        this.runSuccess = null;
+      }
+    },
+
+    async runSuite(suiteName) {
+      if (!this.runTarget.trim()) return;
+      this.running = true;
+      this.runError = null;
+      this.runSuccess = null;
+      try {
+        const resp = await fetch(`/api/eval/suites/${encodeURIComponent(suiteName)}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: this.runTarget.trim() }),
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+          this.runError = err.detail ?? 'Run failed';
+        } else {
+          const report = await resp.json();
+          const s = report.summary ?? {};
+          this.runSuccess = `Done: ${s.passed ?? 0}/${s.total ?? 0} passed`;
+          await this.loadResults();
+          await this.loadTrend();
+        }
+      } catch (e) {
+        this.runError = e.message ?? 'Network error';
+      } finally {
+        this.running = false;
+      }
+    },
+
+    async loadSuites() {
+      try {
+        const r = await fetch('/api/eval/suites');
+        this.suites = r.ok ? await r.json() : [];
+      } catch { this.suites = []; }
+    },
+
+    async loadResults() {
+      try {
+        const r = await fetch('/api/eval/results?limit=20');
+        this.results = r.ok ? await r.json() : [];
+      } catch { this.results = []; }
+    },
+
+    async loadTrend() {
+      try {
+        const r = await fetch('/api/eval/trend?limit=20');
+        this.trend = r.ok ? await r.json() : [];
+      } catch { this.trend = []; }
+    },
+
+    async loadAll() {
+      this.loading = true;
+      await Promise.all([this.loadSuites(), this.loadResults(), this.loadTrend()]);
+      this.loading = false;
+    },
+
+    load() { this.loadAll(); },
+  };
+}
+
+// ── harness.html ──
+function harnessSection() {
+  return {
+    items: [],
+    loading: true,
+    async load() {
+      this.loading = true;
+      try {
+        const res = await fetch('/api/harnesses');
+        if (res.ok) this.items = await res.json();
+      } catch (_) {
+        // API not yet implemented — show empty state
+      } finally {
+        this.loading = false;
+      }
+    }
+  }
+}
+
+// ── logs.html ──
+function logsSection() {
+  return {
+    entries: [],
+    loading: true,
+    formatTime(ts) {
+      if (!ts) return '—';
+      try { return new Date(ts).toLocaleTimeString(); } catch(_) { return ts; }
+    },
+    async load() {
+      this.loading = true;
+      try {
+        const res = await fetch('/api/logs?limit=50');
+        if (res.ok) this.entries = await res.json();
+      } catch (_) {
+        // API not yet wired — show empty state
+      } finally {
+        this.loading = false;
+      }
+    }
+  }
+}
+
+// ── settings.html ──
+function settingsSection() {
+  return {
+    cfg: { has_api_key: false, model: null, base_url: null },
+    async load() {
+      try {
+        const res = await fetch('/api/config');
+        if (res.ok) this.cfg = await res.json();
+      } catch (_) {
+        // API not yet wired
+      }
+    }
+  }
+}
+
+// ── skills.html ──
+function skillsSection() {
+  return {
+    // Skill list state
+    items: [],
+    loading: true,
+    error: null,
+    query: '',
+
+    // Playground state
+    pg: {
+      skillName: null,
+      loading: false,
+      loadError: null,
+      detail: null,
+      inputs: {},
+      model: '',
+      running: false,
+      runError: null,
+      result: null,
+    },
+
+    get filtered() {
+      if (!this.query) return this.items;
+      const q = this.query.toLowerCase();
+      return this.items.filter(s =>
+        (s.name || '').toLowerCase().includes(q) ||
+        (s.description || '').toLowerCase().includes(q)
+      );
+    },
+
+    async load() {
+      this.loading = true;
+      this.error = null;
+      try {
+        const res = await fetch('/api/skills');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        this.items = await res.json();
+      } catch (e) {
+        this.error = 'Failed to load skills: ' + e.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async openPlayground(name) {
+      if (this.pg.skillName === name) return;
+      this.pg.skillName = name;
+      this.pg.loading = true;
+      this.pg.loadError = null;
+      this.pg.detail = null;
+      this.pg.inputs = {};
+      this.pg.model = '';
+      this.pg.runError = null;
+      this.pg.result = null;
+      try {
+        const res = await fetch('/api/skills/' + encodeURIComponent(name));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const detail = await res.json();
+        this.pg.detail = detail;
+        // Pre-fill defaults
+        for (const inp of (detail.inputs || [])) {
+          if (inp.default !== undefined && inp.default !== null) {
+            this.pg.inputs[inp.name] = String(inp.default);
+          }
+        }
+      } catch (e) {
+        this.pg.loadError = 'Failed to load skill details: ' + e.message;
+      } finally {
+        this.pg.loading = false;
+      }
+    },
+
+    async runSkill() {
+      if (!this.pg.skillName || this.pg.running) return;
+      this.pg.running = true;
+      this.pg.runError = null;
+      this.pg.result = null;
+      const body = {
+        inputs: Object.fromEntries(
+          Object.entries(this.pg.inputs).filter(([, v]) => v !== '')
+        ),
+      };
+      if (this.pg.model.trim()) {
+        body.model = this.pg.model.trim();
+      }
+      try {
+        const res = await fetch('/api/skills/' + encodeURIComponent(this.pg.skillName) + '/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          this.pg.runError = data.detail || `HTTP ${res.status}`;
+        } else {
+          this.pg.result = data;
+        }
+      } catch (e) {
+        this.pg.runError = 'Request failed: ' + e.message;
+      } finally {
+        this.pg.running = false;
+      }
+    },
+  };
+}
+  </script>
+
+  <!-- Re-initialize Alpine.js after HTMX swaps in new content -->
+  <script>
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+      if (typeof Alpine !== 'undefined') {
+        Alpine.initTree(evt.detail.target);
+      }
+    });
+  </script>
 </body>
 </html>

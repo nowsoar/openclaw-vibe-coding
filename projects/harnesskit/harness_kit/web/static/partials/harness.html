@@ -40,23 +40,3 @@
   </div>
 
 </div>
-
-<script>
-function harnessSection() {
-  return {
-    items: [],
-    loading: true,
-    async load() {
-      this.loading = true;
-      try {
-        const res = await fetch('/api/harnesses');
-        if (res.ok) this.items = await res.json();
-      } catch (_) {
-        // API not yet implemented — show empty state
-      } finally {
-        this.loading = false;
-      }
-    }
-  }
-}
-</script>

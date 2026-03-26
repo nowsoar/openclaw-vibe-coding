@@ -62,19 +62,3 @@
   </div>
 
 </div>
-
-<script>
-function settingsSection() {
-  return {
-    cfg: { has_api_key: false, model: null, base_url: null },
-    async load() {
-      try {
-        const res = await fetch('/api/config');
-        if (res.ok) this.cfg = await res.json();
-      } catch (_) {
-        // API not yet wired
-      }
-    }
-  }
-}
-</script>

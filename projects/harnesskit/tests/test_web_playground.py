@@ -138,12 +138,14 @@ class TestPlaygroundHTMLStructure:
         assert "runSkill" in resp.text
 
     def test_api_skills_reference(self, client: TestClient) -> None:
-        resp = client.get("/partials/skills")
-        assert "/api/skills" in resp.text
+        # Script moved from partial to index.html for HTMX compatibility
+        combined = client.get("/partials/skills").text + client.get("/").text
+        assert "/api/skills" in combined
 
     def test_api_run_endpoint_referenced(self, client: TestClient) -> None:
-        resp = client.get("/partials/skills")
-        assert "/run" in resp.text
+        # Script moved from partial to index.html for HTMX compatibility
+        combined = client.get("/partials/skills").text + client.get("/").text
+        assert "/run" in combined
 
     def test_model_input_placeholder(self, client: TestClient) -> None:
         resp = client.get("/partials/skills")

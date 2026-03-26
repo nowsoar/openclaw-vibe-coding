@@ -415,12 +415,18 @@ class TestEvalPartialStructure:
         assert "load()" in html
 
     def test_has_api_calls(self, html: str) -> None:
-        assert "/api/eval/suites" in html
-        assert "/api/eval/results" in html
-        assert "/api/eval/trend" in html
+        # Script moved to index.html for HTMX compatibility — check combined content
+        from pathlib import Path as _P
+        _idx = (_P(__file__).parent.parent / "harness_kit" / "web" / "static" / "index.html").read_text()
+        combined = html + _idx
+        assert "/api/eval/suites" in combined
+        assert "/api/eval/results" in combined
+        assert "/api/eval/trend" in combined
 
     def test_has_run_method_call(self, html: str) -> None:
-        assert "/run" in html
+        from pathlib import Path as _P
+        _idx = (_P(__file__).parent.parent / "harness_kit" / "web" / "static" / "index.html").read_text()
+        assert "/run" in html + _idx
 
     def test_has_empty_state(self, html: str) -> None:
         # At least one empty-state element
