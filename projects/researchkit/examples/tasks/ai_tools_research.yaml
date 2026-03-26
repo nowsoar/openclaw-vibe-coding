@@ -1,0 +1,51 @@
+name: AI 编程工具调研
+topic: "AI 编程辅助工具市场调研（Cursor、GitHub Copilot、Claude Code）"
+query: |
+  调研 Cursor、GitHub Copilot、Claude Code 等 AI 编程辅助工具的：
+  1. 用户真实使用体验和评价
+  2. 核心功能对比和差异化
+  3. 定价策略和商业模式
+  4. 最近30天的重要动态
+
+time_range: 30d
+language: zh
+
+# 数据源（选择本次调研使用哪些）
+sources:
+  wechat:
+    enabled: true
+    # 不指定 accounts = 使用 sources.yaml 里全部订阅
+
+  rss:
+    enabled: true
+
+  web:
+    enabled: true
+    targets:
+      - name: Cursor官方博客
+        url: https://cursor.com/blog
+        article_selector: "a[href*='/blog/']"
+      - name: GitHub Blog
+        url: https://github.blog/category/ai-ml/
+        article_selector: "article a"
+
+# 处理流水线（按顺序执行）
+pipeline:
+  - step: keyword_filter
+    keywords: [Cursor, Copilot, Claude Code, AI编程, vibe coding, 代码补全]
+    mode: any
+
+  - step: dedup
+
+  - step: ai_relevance
+    threshold: 0.6
+
+  - step: ai_summarize
+    max_words: 120
+
+# 输出配置
+output:
+  template: competitor_analysis    # 使用竞品分析模板
+  formats: [markdown]
+  max_articles_in_report: 30
+  include_source_list: true

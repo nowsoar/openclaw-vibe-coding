@@ -1,0 +1,31 @@
+name: 趋势报告
+description: 近期行业动态时间线，适用于快速了解最新进展
+
+synthesis_prompt: |
+  你是一位行业观察者。
+  基于以下 {article_count} 篇最新资料，撰写关于"{topic}"的近期趋势报告。
+  要求：时效性强、信息密度高、引用具体数据和事件。
+
+  参考资料：
+  {articles_summary}
+
+sections:
+  - id: highlights
+    title: 本期亮点
+    prompt: "用5个要点概括{topic}领域本期最重要的进展"
+    max_words: 300
+
+  - id: timeline
+    title: 事件时间线
+    format: timeline
+    prompt: "按时间倒序列出所有重要事件，每条含日期、事件、影响评估、来源"
+
+  - id: signals
+    title: 值得关注的信号
+    prompt: "分析其中3-5个值得长期跟踪的信号或苗头，说明为什么重要"
+    max_words: 400
+
+  - id: outlook
+    title: 下期展望
+    prompt: "基于当前动态，预测{topic}领域接下来1-2个月可能出现的变化"
+    max_words: 200

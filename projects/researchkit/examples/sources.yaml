@@ -1,0 +1,20 @@
+# 数据源库配置
+# 配置一次，在多个调研任务中复用
+
+wechat:
+  auth: ~/.researchkit/wechat-auth.json
+  accounts:
+    - { name: 36氪, biz: MzI2NDk5NzA0NA== }
+    - { name: 虎嗅APP, biz: MTQzMjE1NjQwNA== }
+    - { name: 量子位, biz: MzIzNjc1NzUzMw== }
+    - { name: 机器之心, biz: MzA3MzI4Mjgz }
+    - { name: 晚点LatePost, biz: MzU3Mjk1OTQ0Ng== }
+
+rss:
+  feeds:
+    - { name: TechCrunch, url: https://techcrunch.com/feed/ }
+    - { name: 极客公园, url: https://www.geekpark.net/rss }
+    - { name: Ars Technica, url: https://feeds.arstechnica.com/arstechnica/index }
+
+web:
+  timeout: 10

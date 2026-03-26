@@ -1,0 +1,17 @@
+ai:
+  default_model: gpt-4o-mini
+  api_key: ${OPENAI_API_KEY}   # 或直接填写密钥
+  base_url: https://api.openai.com/v1
+  # 不同任务用不同模型（平衡成本与质量）
+  task_models:
+    filter: gpt-4o-mini        # 相关性过滤用便宜模型
+    summarize: gpt-4o-mini     # 摘要生成用便宜模型
+    synthesize: gpt-4o         # 最终报告合成用好模型
+  cost_limit_usd: 3.0          # 单次任务费用上限
+
+cache:
+  enabled: true
+  ttl_days: 3                  # 同一篇文章缓存3天，避免重复抓取
+
+output:
+  dir: ~/Documents/research/   # 报告保存目录

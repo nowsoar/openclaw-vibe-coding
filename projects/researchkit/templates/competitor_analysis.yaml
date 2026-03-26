@@ -1,0 +1,39 @@
+name: 竞品分析报告
+description: 多产品横向对比分析，适用于市场竞争格局研究
+
+synthesis_prompt: |
+  你是一位专业的行业分析师。
+  基于以下 {article_count} 篇整理好的资料，撰写关于"{topic}"的竞品分析报告。
+  要求：结构清晰、有数据支撑、每个观点都有来源，中文，专业但易读。
+
+  参考资料：
+  {articles_summary}
+
+sections:
+  - id: executive_summary
+    title: 执行摘要
+    prompt: "用300字概述{topic}的核心发现和主要结论，让读者2分钟内了解全貌"
+    max_words: 300
+
+  - id: market_overview
+    title: 市场概况
+    prompt: "描述{topic}所在市场的规模、近期重大动态、主要参与者格局"
+    max_words: 500
+
+  - id: comparison
+    title: 产品对比
+    format: table
+    prompt: "整理各产品信息，输出Markdown对比表格，列：产品名 | 公司 | 核心功能 | 定价 | 目标用户"
+
+  - id: user_voice
+    title: 用户反馈
+    prompt: "从资料中提取真实用户评价，分正面和负面两类，每类3-5条，每条附来源链接"
+
+  - id: timeline
+    title: 近期动态
+    prompt: "按时间倒序列出近期重要事件，每条含日期、事件概述、来源"
+
+  - id: conclusion
+    title: 结论与建议
+    prompt: "给出3-5条具体可行的建议，每条说明理由和依据"
+    max_words: 400

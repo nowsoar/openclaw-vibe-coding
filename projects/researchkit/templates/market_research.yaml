@@ -1,0 +1,36 @@
+name: 市场调研报告
+description: 全面的市场现状分析，适用于进入新市场前的调研
+
+synthesis_prompt: |
+  你是一位专业的市场分析师。
+  基于以下 {article_count} 篇资料，撰写关于"{topic}"的市场调研报告。
+  要求：数据翔实、逻辑清晰、有图表建议、中文专业表达。
+
+  参考资料：
+  {articles_summary}
+
+sections:
+  - id: market_size
+    title: 市场规模
+    prompt: "描述{topic}市场的当前规模、增长速度、未来预测（如有数据请引用）"
+    max_words: 400
+
+  - id: key_players
+    title: 主要参与者
+    prompt: "列出{topic}领域的主要企业和产品，分析各自的市场份额和差异化优势"
+    max_words: 500
+
+  - id: trends
+    title: 发展趋势
+    prompt: "分析{topic}领域的3-5个主要发展趋势，每个趋势说明驱动因素和影响"
+    max_words: 500
+
+  - id: opportunities
+    title: 机会与挑战
+    prompt: "识别{topic}领域的主要机会点和潜在挑战，给出量化评估（如可能）"
+    max_words: 400
+
+  - id: recommendation
+    title: 建议
+    prompt: "基于以上分析，给出进入或布局{topic}市场的具体建议"
+    max_words: 300
