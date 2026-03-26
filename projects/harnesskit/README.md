@@ -541,7 +541,7 @@ changelog: "Initial version"
 ```
 
 ```bash
-harnesskit skill save code-reviewer --file code-reviewer.yaml
+harnesskit skill save --file code-reviewer.yaml
 ```
 
 ### Step 3 — Validate and inspect
@@ -586,7 +586,7 @@ harnesskit skill run code-reviewer \
 
 ```bash
 # Iterate: save a new version (patch auto-increments)
-harnesskit skill save code-reviewer --file code-reviewer-v2.yaml
+harnesskit skill save --file code-reviewer-v2.yaml
 harnesskit skill diff code-reviewer@v0.0.1 code-reviewer@v0.0.2
 
 # Tag a version for deployment
@@ -1329,7 +1329,7 @@ harnesskit agent run code-assistant
 | `harnesskit rule stats` | Violation count statistics |
 | `harnesskit rule delete <name>` | Delete a rule |
 | `harnesskit doctor` | Health check scan |
-| `harnesskit skill save <name> --file <yaml>` | Save/update a skill |
+| `harnesskit skill save --file <yaml>` | Save/update a skill |
 | `harnesskit skill show <name[@ver]>` | Display skill definition |
 | `harnesskit skill list` | List all skills |
 | `harnesskit skill diff <a> <b>` | Diff two skill versions |

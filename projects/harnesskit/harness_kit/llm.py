@@ -55,6 +55,30 @@ class LLMResponse:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+def _render_template(template: str, vars: dict[str, str]) -> str:
+    """Render a template string with variable substitution.
+
+    Uses Jinja2 if available (SilentUndefined keeps unresolved vars as-is),
+    otherwise falls back to simple {{key}} string replacement.
+    """
+    if not vars:
+        return template
+    try:
+        from jinja2 import Environment, Undefined
+
+        class SilentUndefined(Undefined):
+            def __str__(self) -> str:
+                return f"{{{{{self._undefined_name}}}}}"
+
+        env = Environment(undefined=SilentUndefined)
+        return env.from_string(template).render(**vars)
+    except Exception:
+        result = template
+        for k, v in vars.items():
+            result = result.replace("{{" + k + "}}", str(v))
+        return result
+
+
 def build_messages(
     skill_data: dict[str, Any],
     rendered: dict[str, str],
@@ -63,8 +87,8 @@ def build_messages(
     """Assemble the messages list for an LLM call from a rendered skill.
 
     Priority:
-      - system: system prompt + injected soft rules
-      - user: user prompt template rendered with vars, plus context block
+      - system: system prompt rendered with vars + injected soft rules
+      - user: user prompt rendered with vars + context template rendered with vars
     """
     vars = vars or {}
     messages: list[dict[str, str]] = []
@@ -72,7 +96,7 @@ def build_messages(
     # --- System message ---
     system_parts: list[str] = []
     if rendered.get("system"):
-        system_parts.append(rendered["system"])
+        system_parts.append(_render_template(rendered["system"], vars))
 
     # Inject soft rules into system prompt
     rules_text = rendered.get("rules", "")
@@ -92,26 +116,12 @@ def build_messages(
     user_parts: list[str] = []
     user_template = rendered.get("user", "")
     if user_template:
-        # Simple variable substitution using Jinja2 if available, else format
-        try:
-            from jinja2 import Environment, Undefined
+        user_parts.append(_render_template(user_template, vars))
 
-            class SilentUndefined(Undefined):
-                def __str__(self) -> str:
-                    return f"{{{{{self._undefined_name}}}}}"
-
-            env = Environment(undefined=SilentUndefined)
-            user_rendered = env.from_string(user_template).render(**vars)
-        except Exception:
-            user_rendered = user_template
-            for k, v in vars.items():
-                user_rendered = user_rendered.replace("{{" + k + "}}", str(v))
-        user_parts.append(user_rendered)
-
-    # Append context block if present (already contains slots rendered at save-time)
+    # Render context template with vars at call-time (not at save-time)
     context_template = rendered.get("context", "")
     if context_template:
-        user_parts.append(context_template)
+        user_parts.append(_render_template(context_template, vars))
 
     # If no user template at all, build from vars
     if not user_parts and vars:
