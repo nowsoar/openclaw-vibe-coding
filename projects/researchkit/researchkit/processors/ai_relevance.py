@@ -33,6 +33,8 @@ class AIRelevanceFilter(BaseProcessor):
         ai_cfg = global_config.ai
         model = self.config.get("model") or ai_cfg.model_for("filter")
         threshold = float(self.config.get("threshold", 0.6))
+        # 优先用 config 中指定的 topic，否则用 context.topic
+        topic = self.config.get("topic") or context.topic
         prompt_tpl = self.config.get("prompt") or DEFAULT_PROMPT
         batch_size = int(self.config.get("batch_size", 5))
 
@@ -42,9 +44,9 @@ class AIRelevanceFilter(BaseProcessor):
             for article in batch:
                 try:
                     prompt = prompt_tpl.format(
-                        topic=context.topic,
+                        topic=topic,
                         title=article.title,
-                        summary=article.summary or article.content[:300],
+                        summary=article.summary or article.content[:300] if article.content else article.title,
                     )
                     score_str = call_ai(prompt, ai_cfg, model=model, max_tokens=10)
                     score = float(score_str)

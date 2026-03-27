@@ -3,34 +3,77 @@ description: 全面的市场现状分析，适用于进入新市场前的调研
 
 synthesis_prompt: |
   你是一位专业的市场分析师。
-  基于以下 {article_count} 篇资料，撰写关于"{topic}"的市场调研报告。
-  要求：数据翔实、逻辑清晰、有图表建议、中文专业表达。
+  
+  **研究目标**：{topic}
+  **研究背景**：以下 {article_count} 篇来自中国科技媒体的最新资料，反映了2026年中国 AI Agent、智能体工具、编程助手等相关领域的市场动态。请将这些资料作为市场背景与竞争环境的参考依据，基于其中的行业数据、趋势信号和竞争格局，对研究目标展开专业分析。
+  
+  **分析要求**：
+  - 将资料中涉及的行业趋势、竞争动态、用户需求，映射到研究目标的市场分析框架中
+  - 明确标注哪些结论直接来自资料引用，哪些为基于行业逻辑的推断
+  - 撰写结构完整、逻辑严谨的专业市场调研报告，中文表达，字数不少于3000字
+  - 在适当位置提供图表建议（注明"[图表建议X：XXX]"）
 
   参考资料：
   {articles_summary}
 
 sections:
-  - id: market_size
-    title: 市场规模
-    prompt: "描述{topic}市场的当前规模、增长速度、未来预测（如有数据请引用）"
+  - id: executive_summary
+    title: 执行摘要
+    prompt: |
+      基于{article_count}篇资料，用300字以内概括"{topic}"的核心市场机会、主要挑战和战略建议。
+      给出3-5条要点。
     max_words: 400
 
-  - id: key_players
-    title: 主要参与者
-    prompt: "列出{topic}领域的主要企业和产品，分析各自的市场份额和差异化优势"
-    max_words: 500
+  - id: market_environment
+    title: 中国市场宏观环境
+    prompt: |
+      基于资料中涉及的行业动态，分析中国 AI Agent / 智能体工具市场的宏观环境：
+      1. 政策与监管方向（从资料中提取信号）
+      2. 技术成熟度与产业化节奏
+      3. 资本市场态度与商业化进展
+      结合资料中的具体案例与数据，字数400-600字。
+    max_words: 700
 
-  - id: trends
-    title: 发展趋势
-    prompt: "分析{topic}领域的3-5个主要发展趋势，每个趋势说明驱动因素和影响"
-    max_words: 500
+  - id: tech_trends
+    title: 核心技术趋势
+    prompt: |
+      从资料中识别并分析2026年中国 AI Agent 领域的3-5个关键技术趋势（如多智能体协作、部署自动化、上下文管理、安全可控等）。
+      每个趋势需说明：① 趋势定义 ② 资料中的证据 ③ 对"{topic}"的市场含义。
+      字数500-700字。
+    max_words: 800
 
-  - id: opportunities
-    title: 机会与挑战
-    prompt: "识别{topic}领域的主要机会点和潜在挑战，给出量化评估（如可能）"
-    max_words: 400
+  - id: competitive_landscape
+    title: 竞争格局分析
+    prompt: |
+      基于资料中提及的企业、产品和技术方向（如阿里云、苹果Siri生态、国内开源项目、创业公司等），
+      绘制竞争格局：① 竞争维度矩阵 ② 各类玩家的优劣势 ③ 市场空白与差异化机会。
+      结合"{topic}"分析其潜在竞争定位，字数400-600字。
+    max_words: 700
 
-  - id: recommendation
-    title: 建议
-    prompt: "基于以上分析，给出进入或布局{topic}市场的具体建议"
-    max_words: 300
+  - id: demand_analysis
+    title: 用户需求与应用场景
+    prompt: |
+      从资料中提炼中国开发者、企业IT部门、科研机构对 AI Agent 工具的真实需求与痛点。
+      分析"{topic}"的目标客群画像、核心应用场景和采购决策因素。
+      字数400-500字。
+    max_words: 600
+
+  - id: opportunities_risks
+    title: 机遇与风险
+    prompt: |
+      结合资料反映的市场信号，列出"{topic}"进入中国市场的：
+      ① 核心机遇（至少4个，含市场规模估算逻辑）
+      ② 主要风险（至少3个，含缓解建议）
+      字数400-500字。
+    max_words: 600
+
+  - id: strategy_recommendation
+    title: 战略建议
+    prompt: |
+      基于以上分析，给出"{topic}"进入/拓展中国市场的具体战略建议：
+      ① 优先进入的细分赛道（附理由）
+      ② 产品本土化方向
+      ③ 生态合作策略
+      ④ 18个月落地路线图（分阶段）
+      字数400-500字。
+    max_words: 600
