@@ -9,25 +9,31 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 
 from ..db import get_session
-from ..models import ResearchTask, ResearchTaskCreate, ResearchTaskRead, ResearchTaskUpdate
+from ..models import ResearchTask, ResearchTaskCreate, ResearchTaskRead, ResearchTaskUpdate, User
 from ..ws.progress import manager
+from .auth import get_current_user_optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 SessionDep = Annotated[Session, Depends(get_session)]
+CurrentUser = Annotated[Optional[User], Depends(get_current_user_optional)]
 
 
 @router.get("", response_model=list[ResearchTaskRead])
-def list_tasks(session: SessionDep, status: Optional[str] = None):
+def list_tasks(session: SessionDep, current_user: CurrentUser, status: Optional[str] = None):
     stmt = select(ResearchTask)
+    if current_user:
+        stmt = stmt.where(ResearchTask.user_id == current_user.id)
     if status:
         stmt = stmt.where(ResearchTask.status == status)
     return session.exec(stmt.order_by(ResearchTask.created_at.desc())).all()
 
 
 @router.post("", response_model=ResearchTaskRead, status_code=201)
-def create_task(task_in: ResearchTaskCreate, session: SessionDep):
+def create_task(task_in: ResearchTaskCreate, session: SessionDep, current_user: CurrentUser):
     task = ResearchTask(**task_in.model_dump())
+    if current_user:
+        task.user_id = current_user.id
     session.add(task)
     session.commit()
     session.refresh(task)
@@ -35,18 +41,14 @@ def create_task(task_in: ResearchTaskCreate, session: SessionDep):
 
 
 @router.get("/{task_id}", response_model=ResearchTaskRead)
-def get_task(task_id: int, session: SessionDep):
-    task = session.get(ResearchTask, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+def get_task(task_id: int, session: SessionDep, current_user: CurrentUser):
+    task = _get_owned(task_id, session, current_user)
     return task
 
 
 @router.patch("/{task_id}", response_model=ResearchTaskRead)
-def update_task(task_id: int, task_in: ResearchTaskUpdate, session: SessionDep):
-    task = session.get(ResearchTask, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+def update_task(task_id: int, task_in: ResearchTaskUpdate, session: SessionDep, current_user: CurrentUser):
+    task = _get_owned(task_id, session, current_user)
     for field, value in task_in.model_dump(exclude_unset=True).items():
         setattr(task, field, value)
     session.add(task)
@@ -56,19 +58,15 @@ def update_task(task_id: int, task_in: ResearchTaskUpdate, session: SessionDep):
 
 
 @router.delete("/{task_id}", status_code=204)
-def delete_task(task_id: int, session: SessionDep):
-    task = session.get(ResearchTask, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+def delete_task(task_id: int, session: SessionDep, current_user: CurrentUser):
+    task = _get_owned(task_id, session, current_user)
     session.delete(task)
     session.commit()
 
 
 @router.post("/{task_id}/run", response_model=ResearchTaskRead)
-def run_task(task_id: int, background_tasks: BackgroundTasks, session: SessionDep):
-    task = session.get(ResearchTask, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+def run_task(task_id: int, background_tasks: BackgroundTasks, session: SessionDep, current_user: CurrentUser):
+    task = _get_owned(task_id, session, current_user)
     if task.status == "running":
         raise HTTPException(status_code=409, detail="任务正在运行中")
 
@@ -83,10 +81,8 @@ def run_task(task_id: int, background_tasks: BackgroundTasks, session: SessionDe
 
 
 @router.get("/{task_id}/report")
-def get_report(task_id: int, session: SessionDep):
-    task = session.get(ResearchTask, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="任务不存在")
+def get_report(task_id: int, session: SessionDep, current_user: CurrentUser):
+    task = _get_owned(task_id, session, current_user)
     if not task.report_path:
         raise HTTPException(status_code=404, detail="报告尚未生成")
     from pathlib import Path
@@ -97,8 +93,17 @@ def get_report(task_id: int, session: SessionDep):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Background task execution
+# 工具函数
 # ──────────────────────────────────────────────────────────────────────────────
+
+def _get_owned(task_id: int, session: Session, current_user: Optional[User]) -> ResearchTask:
+    """查找任务并验证用户所有权（登录用户只能访问自己的任务）"""
+    task = session.get(ResearchTask, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if current_user and task.user_id is not None and task.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问此任务")
+    return task
 
 def _execute_task(task_id: int):
     """在线程中运行 Pipeline，通过 asyncio 广播进度"""

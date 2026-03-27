@@ -11,6 +11,7 @@ from .db import init_db
 from .api import tasks as tasks_router
 from .api import sources as sources_router
 from .api import reports as reports_router
+from .api import auth as auth_router
 from .ws.progress import manager
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ app.add_middleware(
 )
 
 # ── 路由注册 ──────────────────────────────────────────────────────────────────
+app.include_router(auth_router.router, prefix="/api")
 app.include_router(tasks_router.router, prefix="/api")
 app.include_router(sources_router.router, prefix="/api")
 app.include_router(reports_router.router, prefix="/api")
