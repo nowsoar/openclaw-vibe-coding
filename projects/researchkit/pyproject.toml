@@ -67,3 +67,4 @@ Repository = "https://github.com/nowsoar/openclaw-vibe-coding"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
