@@ -94,7 +94,7 @@ def run(
         topic=task_data.get("topic", task_data.get("name", "")),
         query=task_data.get("query", ""),
         keywords=task_data.get("keywords", []),
-        time_range_days=_parse_time_range(task_data.get("time_range", "30d")),
+        time_range_days=_parse_time_range(task_data.get("time_range", task_data.get("date_range", "30d"))),
         language=task_data.get("language", "zh"),
     )
 
@@ -332,12 +332,17 @@ def list_plugins():
 
 
 
-    """解析时间范围字符串，如 '30d' / '7d' / '30'"""
+def _parse_time_range(value) -> int:
+    """解析时间范围字符串，如 '30d' / '7d' / '2w' / '1m' / '30'"""
     if isinstance(value, int):
         return value
     value = str(value).lower().strip()
     if value.endswith("d"):
         return int(value[:-1])
+    if value.endswith("w"):
+        return int(value[:-1]) * 7
+    if value.endswith("m"):
+        return int(value[:-1]) * 30
     return int(value)
 
 
