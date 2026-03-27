@@ -23,8 +23,13 @@ class RSSSource(BaseSource):
         articles = []
 
         for feed_cfg in feeds:
-            feed_name = feed_cfg.get("name", "RSS")
-            feed_url = feed_cfg.get("url", "")
+            # 支持两种格式：字符串 URL 或 dict {name, url}
+            if isinstance(feed_cfg, str):
+                feed_url = feed_cfg
+                feed_name = feed_url.split("/")[2] if "/" in feed_url else feed_url
+            else:
+                feed_name = feed_cfg.get("name", "RSS")
+                feed_url = feed_cfg.get("url", "")
             if not feed_url:
                 continue
 

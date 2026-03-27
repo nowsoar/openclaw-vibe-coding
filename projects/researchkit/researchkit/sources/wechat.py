@@ -121,7 +121,7 @@ class WeChatSource(BaseSource):
             from datetime import date
             updated = auth.get("updated_at", "")
             if updated:
-                days = (date.today() - date.fromisoformat(updated)).days
+                days = (date.today() - date.fromisoformat(updated[:10])).days
                 if days >= 7:
                     return False, f"微信 Token 已 {days} 天未更新，请刷新"
             return True, f"已配置 {len(self.config.get('accounts', []))} 个公众号"

@@ -19,7 +19,7 @@ class WebSource(BaseSource):
             logger.error("requests 或 beautifulsoup4 未安装")
             return []
 
-        targets = self.config.get("targets", [])
+        targets = self.config.get("targets") or self.config.get("urls", [])
         timeout = self.config.get("timeout", 10)
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -91,7 +91,7 @@ class WebSource(BaseSource):
         return ""
 
     def health_check(self) -> tuple:
-        targets = self.config.get("targets", [])
+        targets = self.config.get("targets") or self.config.get("urls", [])
         if not targets:
             return False, "未配置任何目标网站"
         return True, f"已配置 {len(targets)} 个目标网站"

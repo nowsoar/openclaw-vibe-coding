@@ -34,19 +34,55 @@
 
       <!-- Step 2: 数据来源 -->
       <div v-if="step === 1" class="step-content">
-        <el-form :model="form" label-width="100px" size="large">
+        <el-form :model="form" label-width="110px" size="large">
+
+          <!-- RSS -->
           <el-form-item label="RSS 订阅">
             <el-switch v-model="form.sources_config.rss.enabled" />
-            <el-text type="info" size="small" style="margin-left: 8px">订阅技术博客 RSS 源</el-text>
           </el-form-item>
+          <template v-if="form.sources_config.rss.enabled">
+            <el-form-item label="RSS 链接">
+              <div class="url-list">
+                <div v-for="(url, i) in form.sources_config.rss.feeds" :key="i" class="url-row">
+                  <el-input v-model="form.sources_config.rss.feeds[i]"
+                    placeholder="https://rsshub.app/xxx  或  https://xxx/feed.xml" />
+                  <el-button type="danger" text @click="removeItem(form.sources_config.rss.feeds, i)">✕</el-button>
+                </div>
+                <el-button size="small" @click="form.sources_config.rss.feeds.push('')">+ 添加 RSS 链接</el-button>
+              </div>
+              <div class="field-hint">支持标准 RSS/Atom，也可以用 RSSHub 生成各平台订阅链接</div>
+            </el-form-item>
+          </template>
+
+          <!-- 微信公众号 -->
           <el-form-item label="微信公众号">
             <el-switch v-model="form.sources_config.wechat.enabled" />
-            <el-text type="info" size="small" style="margin-left: 8px">需要配置微信 Cookie</el-text>
           </el-form-item>
+          <template v-if="form.sources_config.wechat.enabled">
+            <el-form-item label="公众号名称">
+              <el-select v-model="form.sources_config.wechat.accounts" multiple filterable allow-create
+                placeholder="输入账号名称后按回车，如：量子位、机器之心" style="width: 100%">
+              </el-select>
+              <div class="field-hint">输入公众号名称（中文全称），系统会自动搜索对应账号</div>
+            </el-form-item>
+          </template>
+
+          <!-- 网页爬取 -->
           <el-form-item label="网页爬取">
             <el-switch v-model="form.sources_config.web.enabled" />
-            <el-text type="info" size="small" style="margin-left: 8px">抓取指定网站内容</el-text>
           </el-form-item>
+          <template v-if="form.sources_config.web.enabled">
+            <el-form-item label="网页链接">
+              <div class="url-list">
+                <div v-for="(url, i) in form.sources_config.web.urls" :key="i" class="url-row">
+                  <el-input v-model="form.sources_config.web.urls[i]"
+                    placeholder="https://example.com/blog" />
+                  <el-button type="danger" text @click="removeItem(form.sources_config.web.urls, i)">✕</el-button>
+                </div>
+                <el-button size="small" @click="form.sources_config.web.urls.push('')">+ 添加网页链接</el-button>
+              </div>
+            </el-form-item>
+          </template>
 
           <el-divider>处理流水线</el-divider>
           <el-form-item label="关键词过滤">
@@ -123,9 +159,9 @@ const form = reactive({
   keywords: [],
   time_range_days: 30,
   sources_config: {
-    rss: { enabled: true },
-    wechat: { enabled: false },
-    web: { enabled: false },
+    rss: { enabled: false, feeds: [''] },
+    wechat: { enabled: false, accounts: [] },
+    web: { enabled: false, urls: [''] },
   },
   pipeline_config: [],
   output_config: {
@@ -151,6 +187,10 @@ onMounted(async () => {
   } catch { /* ignore */ }
 })
 
+function removeItem(arr, i) {
+  arr.splice(i, 1)
+}
+
 async function handleNext() {
   if (step.value < 2) {
     step.value++
@@ -168,7 +208,16 @@ async function handleNext() {
     if (pipelineFlags.quality_score) pipeline.push({ step: 'quality_score' })
     form.pipeline_config = pipeline
 
-    const task = await taskStore.createTask({ ...form })
+    // 清理空白 URL
+    const cleanSources = JSON.parse(JSON.stringify(form.sources_config))
+    if (cleanSources.rss.feeds) {
+      cleanSources.rss.feeds = cleanSources.rss.feeds.filter(u => u.trim())
+    }
+    if (cleanSources.web.urls) {
+      cleanSources.web.urls = cleanSources.web.urls.filter(u => u.trim())
+    }
+
+    const task = await taskStore.createTask({ ...form, sources_config: cleanSources })
     ElMessage.success('任务创建成功！')
 
     // 立即运行
@@ -191,4 +240,8 @@ async function handleNext() {
   display: flex; justify-content: flex-end; gap: 12px;
   padding-top: 24px; border-top: 1px solid #eee; margin-top: 24px;
 }
+.url-list { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.url-row { display: flex; gap: 8px; align-items: center; }
+.url-row .el-input { flex: 1; }
+.field-hint { font-size: 12px; color: #909399; margin-top: 4px; }
 </style>
