@@ -2,6 +2,7 @@
 import logging
 from .base import BaseProcessor
 from ..core.models import Article, ResearchContext
+from ..core.ai_client import call_ai
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +24,12 @@ class AISummarizer(BaseProcessor):
     """
 
     def process(self, articles: list, context: ResearchContext) -> list:
-        try:
-            from openai import OpenAI
-        except ImportError:
-            logger.error("openai 未安装，跳过摘要生成")
-            return articles
-
         global_config = getattr(self, "_global_config", None)
         if not global_config:
             logger.warning("未获取到 global_config，跳过 AI 摘要")
             return articles
 
         ai_cfg = global_config.ai
-        client = OpenAI(api_key=ai_cfg.api_key, base_url=ai_cfg.base_url)
         model = self.config.get("model") or ai_cfg.model_for("summarize")
         max_words = int(self.config.get("max_words", 120))
         prompt_tpl = self.config.get("prompt") or DEFAULT_PROMPT
@@ -54,16 +48,11 @@ class AISummarizer(BaseProcessor):
                     title=article.title,
                     content=content[:2000],
                 )
-                resp = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.5,
-                    max_tokens=300,
-                )
-                article.summary = resp.choices[0].message.content.strip()
+                article.summary = call_ai(prompt, ai_cfg, model=model, max_tokens=300)
             except Exception as e:
                 logger.warning(f"生成摘要失败（{article.title[:30]}）: {e}")
                 if not article.summary:
                     article.summary = article.title
 
         return articles
+

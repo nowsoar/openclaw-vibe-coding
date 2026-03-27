@@ -2,6 +2,7 @@
 import logging
 from .base import BaseProcessor
 from ..core.models import Article, ResearchContext
+from ..core.ai_client import call_ai
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,6 @@ class AIRelevanceFilter(BaseProcessor):
     """
 
     def process(self, articles: list, context: ResearchContext) -> list:
-        try:
-            from openai import OpenAI
-        except ImportError:
-            logger.error("openai 未安装，跳过相关性过滤")
-            return articles
-
         # 从上层传入的 global_config（通过 metadata）
         global_config = getattr(self, "_global_config", None)
         if not global_config:
@@ -36,7 +31,6 @@ class AIRelevanceFilter(BaseProcessor):
             return articles
 
         ai_cfg = global_config.ai
-        client = OpenAI(api_key=ai_cfg.api_key, base_url=ai_cfg.base_url)
         model = self.config.get("model") or ai_cfg.model_for("filter")
         threshold = float(self.config.get("threshold", 0.6))
         prompt_tpl = self.config.get("prompt") or DEFAULT_PROMPT
@@ -52,13 +46,7 @@ class AIRelevanceFilter(BaseProcessor):
                         title=article.title,
                         summary=article.summary or article.content[:300],
                     )
-                    resp = client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.1,
-                        max_tokens=10,
-                    )
-                    score_str = resp.choices[0].message.content.strip()
+                    score_str = call_ai(prompt, ai_cfg, model=model, max_tokens=10)
                     score = float(score_str)
                     article.relevance_score = score
                     if score >= threshold:
@@ -72,3 +60,4 @@ class AIRelevanceFilter(BaseProcessor):
 
         logger.info(f"AI 相关性过滤：{len(articles)} → {len(result)} 篇（阈值={threshold}）")
         return result
+

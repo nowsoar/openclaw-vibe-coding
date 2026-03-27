@@ -84,11 +84,7 @@ class QualityScorer(BaseProcessor):
             return self._heuristic_score(article)
 
         try:
-            from openai import OpenAI
-            client = OpenAI(
-                api_key=global_cfg.ai.api_key,
-                base_url=global_cfg.ai.base_url or None,
-            )
+            from ..core.ai_client import call_ai
             sample_chars = self.config.get("ai_sample_chars", 800)
             text_sample = (article.content or article.summary or "")[:sample_chars]
             prompt = (
@@ -99,13 +95,7 @@ class QualityScorer(BaseProcessor):
                 f"正文节选：{text_sample}"
             )
             model = global_cfg.ai.model_for("quality_scorer")
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=10,
-                temperature=0,
-            )
-            raw = resp.choices[0].message.content.strip()
+            raw = call_ai(prompt, global_cfg.ai, model=model, max_tokens=10)
             match = re.search(r'[\d.]+', raw)
             score = float(match.group()) if match else 0.5
             return round(max(0.0, min(1.0, score)), 3)

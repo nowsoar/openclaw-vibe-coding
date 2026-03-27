@@ -13,6 +13,7 @@ class AIConfig:
     base_url: str = "https://api.openai.com/v1"
     task_models: dict = field(default_factory=dict)  # 各任务类型对应的模型
     cost_limit_usd: float = 5.0
+    api_type: str = "openai"  # "openai" 或 "anthropic"
 
     def model_for(self, task_type: str) -> str:
         """获取指定任务类型的模型，没有则用默认值"""
@@ -60,6 +61,7 @@ def load_global_config(path: Optional[Path] = None) -> GlobalConfig:
         base_url=ai_data.get("base_url", "https://api.openai.com/v1"),
         task_models=ai_data.get("task_models", {}),
         cost_limit_usd=float(ai_data.get("cost_limit_usd", 5.0)),
+        api_type=ai_data.get("api_type", "openai"),
     )
 
     cache_data = data.get("cache", {})

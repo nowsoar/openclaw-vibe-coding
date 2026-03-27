@@ -74,9 +74,8 @@ class MarkdownOutput(BaseOutput):
 
     def _ai_synthesize(self, template, context, articles, articles_summary, global_config) -> str:
         try:
-            from openai import OpenAI
+            from ..core.ai_client import call_ai
             ai_cfg = global_config.ai
-            client = OpenAI(api_key=ai_cfg.api_key, base_url=ai_cfg.base_url)
             model = ai_cfg.model_for("synthesize")
 
             synthesis_prompt_tpl = template.get("synthesis_prompt", DEFAULT_SYNTHESIS_PROMPT)
@@ -85,13 +84,7 @@ class MarkdownOutput(BaseOutput):
                 article_count=len(articles),
                 articles_summary=articles_summary,
             )
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": synthesis_prompt}],
-                temperature=0.7,
-                max_tokens=4000,
-            )
-            return resp.choices[0].message.content.strip()
+            return call_ai(synthesis_prompt, ai_cfg, model=model, max_tokens=4000)
         except Exception as e:
             logger.error(f"AI 报告合成失败: {e}")
             return self._fallback_report(context, articles, articles_summary)
