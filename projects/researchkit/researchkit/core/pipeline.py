@@ -46,6 +46,7 @@ def _build_processor(step: dict, global_config: GlobalConfig):
     mapping = {
         "keyword_filter": KeywordFilter,
         "dedup": Deduplicator,
+        "deduplicator": Deduplicator,
         "ai_relevance": AIRelevanceFilter,
         "ai_summarize": AISummarizer,
         "content_fetcher": ContentFetcherProcessor,
@@ -109,12 +110,25 @@ class Pipeline:
 
         # ── 阶段三：生成报告 ──
         notify("output", 0, 1, "生成报告...")
-        output_format = self.task.output_config.get("format", "markdown")
+
+        # 兼容 output_config 为 list 格式（如 ["markdown"] 或 [{"format": "markdown"}]）
+        out_cfg = self.task.output_config
+        if isinstance(out_cfg, list):
+            merged = {}
+            for item in out_cfg:
+                if isinstance(item, str):
+                    merged["format"] = item
+                elif isinstance(item, dict):
+                    merged.update(item)
+            out_cfg = merged
+            self.task.output_config = out_cfg
+
+        output_format = out_cfg.get("format", "markdown")
         output = self._build_output(output_format)
         output._global_config = self.global_config
 
-        template_name = self.task.output_config.get("template", "competitor_analysis")
-        report_md = output.render(articles, context, template_name, self.task.output_config)
+        template_name = out_cfg.get("template", "market_research")
+        report_md = output.render(articles, context, template_name, out_cfg)
         notify("output", 1, 1, "报告生成完成")
 
         return report_md
