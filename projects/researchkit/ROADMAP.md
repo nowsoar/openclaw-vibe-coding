@@ -37,18 +37,18 @@
 
 ---
 
-## Phase 3：Web 前端（Vue 3 + FastAPI）
+## Phase 3：Web 前端（Vue 3 + FastAPI）✅
 
 **目标**：提供可视化界面，无需命令行即可使用
 
 前端技术栈：Vue 3 + Element Plus + Pinia + Vite
 后端：FastAPI + WebSocket（实时进度推送）
 
-- [ ] FastAPI 后端服务
+- [x] FastAPI 后端服务
   - 任务管理 CRUD API
   - 数据源状态 API
   - WebSocket 实时进度推送
-- [ ] 前端页面
+- [x] 前端页面
   - Dashboard（数据概览）
   - 新建调研（三步引导式表单）
   - 任务运行进度（实时进度条 + 日志流）
