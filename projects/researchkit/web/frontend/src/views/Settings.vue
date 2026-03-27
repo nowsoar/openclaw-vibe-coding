@@ -9,6 +9,23 @@
         <!-- ── AI 配置 Tab ─────────────────────────────────────────── -->
         <el-tab-pane label="🤖 AI 配置" name="ai">
           <el-form :model="aiForm" label-width="120px" class="settings-form">
+
+            <!-- 快速预设 -->
+            <el-form-item label="快速填入">
+              <div class="provider-presets">
+                <el-button
+                  v-for="p in providers"
+                  :key="p.name"
+                  size="small"
+                  :class="['preset-btn', aiForm.base_url === p.base_url ? 'active' : '']"
+                  @click="applyPreset(p)"
+                >
+                  {{ p.label }}
+                </el-button>
+              </div>
+              <div class="field-hint">选择服务商后自动填入 Base URL 和推荐模型，只需再填写 API Key 即可</div>
+            </el-form-item>
+
             <el-form-item label="API Key">
               <el-input
                 v-model="aiForm.api_key"
@@ -29,6 +46,7 @@
                 placeholder="https://api.openai.com/v1"
                 style="max-width: 480px"
               />
+              <div class="field-hint">支持任意 OpenAI 兼容接口或 Anthropic 接口</div>
             </el-form-item>
 
             <el-form-item label="默认模型">
@@ -40,10 +58,13 @@
             </el-form-item>
 
             <el-form-item label="API 类型">
-              <el-select v-model="aiForm.api_type" style="width: 200px">
-                <el-option label="OpenAI / 兼容接口" value="openai" />
-                <el-option label="Anthropic Claude" value="anthropic" />
+              <el-select v-model="aiForm.api_type" style="width: 240px">
+                <el-option label="OpenAI 兼容（大多数第三方）" value="openai" />
+                <el-option label="Anthropic 原生格式" value="anthropic" />
               </el-select>
+              <div class="field-hint">
+                OpenAI 兼容格式适用于 DeepSeek、Moonshot、Qwen、Doubao、OpenRouter 等绝大多数第三方服务
+              </div>
             </el-form-item>
 
             <el-form-item label="费用限额 (USD)">
@@ -177,6 +198,31 @@ const saving = ref(false)
 const testing = ref(false)
 const savingWechat = ref(false)
 const testResult = ref(null)
+
+// ── 服务商预设 ────────────────────────────────────────────────────────
+const providers = [
+  { label: 'OpenAI',      base_url: 'https://api.openai.com/v1',                                    model: 'gpt-4o-mini',          api_type: 'openai' },
+  { label: 'DeepSeek',    base_url: 'https://api.deepseek.com/v1',                                  model: 'deepseek-chat',        api_type: 'openai' },
+  { label: 'Moonshot',    base_url: 'https://api.moonshot.cn/v1',                                   model: 'moonshot-v1-8k',       api_type: 'openai' },
+  { label: 'Qwen (阿里)', base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',            model: 'qwen-plus',            api_type: 'openai' },
+  { label: 'Doubao (字节)', base_url: 'https://ark.cn-beijing.volces.com/api/v3',                   model: 'doubao-pro-32k',       api_type: 'openai' },
+  { label: 'Gemini',      base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',     model: 'gemini-2.0-flash',     api_type: 'openai' },
+  { label: 'OpenRouter',  base_url: 'https://openrouter.ai/api/v1',                                 model: 'deepseek/deepseek-chat', api_type: 'openai' },
+  { label: 'Anthropic',   base_url: 'https://api.anthropic.com',                                    model: 'claude-3-5-haiku-20241022', api_type: 'anthropic' },
+  { label: '自定义',       base_url: '',                                                              model: '',                     api_type: 'openai' },
+]
+
+function applyPreset(preset) {
+  if (preset.label === '自定义') {
+    aiForm.value.base_url = ''
+    aiForm.value.model = ''
+    aiForm.value.api_type = 'openai'
+    return
+  }
+  aiForm.value.base_url = preset.base_url
+  aiForm.value.model = preset.model
+  aiForm.value.api_type = preset.api_type
+}
 
 const aiForm = ref({
   api_key: '',
@@ -334,5 +380,21 @@ onMounted(loadSettings)
   padding: 1px 4px;
   border-radius: 3px;
   font-size: 12px;
+}
+
+.provider-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preset-btn {
+  border-radius: 16px !important;
+}
+
+.preset-btn.active {
+  background-color: #409eff !important;
+  color: #fff !important;
+  border-color: #409eff !important;
 }
 </style>
