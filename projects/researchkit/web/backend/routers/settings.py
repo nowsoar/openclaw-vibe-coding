@@ -193,7 +193,7 @@ async def test_ai_connection():
     try:
         if api_type == "anthropic":
             import anthropic  # type: ignore
-            client = anthropic.Anthropic(api_key=api_key)
+            client = anthropic.Anthropic(api_key=api_key, base_url=base_url)
             msg = client.messages.create(
                 model=model,
                 max_tokens=16,
