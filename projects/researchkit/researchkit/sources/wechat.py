@@ -36,6 +36,37 @@ class WeChatSource(BaseSource):
             self._auth = json.load(f)
         return self._auth
 
+    def _search_biz(self, name: str, cookie: str, token: str) -> str:
+        """通过公众号名称搜索 biz（fakeid）"""
+        query = urllib.parse.quote(name)
+        url = (f"https://mp.weixin.qq.com/cgi-bin/searchbiz"
+               f"?action=search_biz&begin=0&count=5&query={query}"
+               f"&token={token}&lang=zh_CN&f=json&ajax=1")
+        try:
+            result = subprocess.run(
+                ["curl", "-s", url,
+                 "-H", "accept: */*",
+                 "-H", "x-requested-with: XMLHttpRequest",
+                 "-b", cookie,
+                 "-H", "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"],
+                capture_output=True, text=True, timeout=10,
+            )
+            data = json.loads(result.stdout)
+            if data.get("base_resp", {}).get("ret") != 0:
+                return ""
+            lst = data.get("list", [])
+            if not lst:
+                return ""
+            # 精确匹配或返回第一个
+            for item in lst:
+                if item.get("nickname") == name:
+                    return item.get("fakeid", "")
+            return lst[0].get("fakeid", "")
+        except Exception as e:
+            logger.warning(f"搜索公众号 {name} 失败: {e}")
+            return ""
+
     def _get_articles(self, biz: str, cookie: str, token: str) -> list:
         fakeid = urllib.parse.quote(biz, safe="")
         url = _API_URL.format(fakeid=fakeid, token=token)
@@ -88,10 +119,20 @@ class WeChatSource(BaseSource):
         since_ts = int(since.timestamp()) if since else 0
 
         for acc in accounts:
-            biz = acc.get("biz", "")
-            acc_name = acc.get("name", biz)
-            if not biz:
-                continue
+            # 支持两种格式：
+            # 1. 字符串 "量子位" → 通过 searchbiz API 查找 biz
+            # 2. dict {"name": "量子位", "biz": "Mzxxx"}
+            if isinstance(acc, str):
+                acc_name = acc
+                biz = self._search_biz(acc, cookie, token)
+                if not biz:
+                    logger.warning(f"找不到公众号：{acc_name}")
+                    continue
+            else:
+                biz = acc.get("biz", "")
+                acc_name = acc.get("name", biz)
+                if not biz:
+                    continue
             try:
                 raw = self._get_articles(biz, cookie, token)
                 for a in raw:
