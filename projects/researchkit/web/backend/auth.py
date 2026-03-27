@@ -41,6 +41,16 @@ def create_refresh_token(data: dict) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def create_reset_token(email: str, expires_minutes: int = 60) -> str:
+    """生成密码重置令牌（type=reset，短期有效）"""
+    payload = {
+        "sub": email,
+        "type": "reset",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=expires_minutes),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
 def decode_token(token: str) -> dict:
     """解码 JWT，失败时抛出 JWTError"""
     return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])

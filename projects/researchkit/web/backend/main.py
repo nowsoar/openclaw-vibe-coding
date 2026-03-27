@@ -26,6 +26,7 @@ from .schemas import (
 from .storage import TaskStore
 from .database import init_db, get_db
 from .routers.auth import router as auth_router, get_current_user
+from .routers.organizations import router as orgs_router
 from .scheduler import scheduler as _scheduler
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,8 @@ async def shutdown():
 
 # 注册认证路由
 app.include_router(auth_router)
+# 注册组织路由
+app.include_router(orgs_router)
 
 
 # ─── 任务管理 CRUD ──────────────────────────────────────────────────────────

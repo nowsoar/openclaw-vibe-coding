@@ -24,3 +24,5 @@ frontend/dist/
 # Project
 *.db
 *.db-journal
+__pycache__/
+*.pyc
