@@ -1,0 +1,38 @@
+name: 政策分析报告
+description: 解读行业政策法规动向，分析对企业或市场的影响，适用于合规与战略研究
+
+synthesis_prompt: |
+  你是一位政策研究专家。
+  基于以下 {article_count} 篇政策资料，撰写关于"{topic}"的政策分析报告。
+  要求：准确解读政策原文、分析影响链条、语言严谨、中文专业表达。
+
+  参考资料：
+  {articles_summary}
+
+sections:
+  - id: policy_background
+    title: 政策背景
+    prompt: "梳理{topic}相关政策的出台背景、监管机构和主要推进时间线"
+    max_words: 400
+
+  - id: key_provisions
+    title: 核心条款解读
+    prompt: "提取并解读{topic}政策中最重要的条款，说明具体要求和合规标准"
+    max_words: 500
+
+  - id: impact_analysis
+    title: 影响分析
+    prompt: "分析{topic}政策对企业运营、行业格局、投融资环境的短期和长期影响"
+    max_words: 500
+
+  - id: compliance_guide
+    title: 合规建议
+    prompt: "给出企业应对{topic}政策的合规路径和行动建议，分优先级排列"
+    max_words: 400
+
+  - id: outlook
+    title: 政策展望
+    prompt: "基于现有趋势，预判{topic}领域后续政策走向和监管重点"
+    max_words: 300
+
+include_source_list: true

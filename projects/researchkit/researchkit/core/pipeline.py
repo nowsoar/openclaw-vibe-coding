@@ -14,11 +14,14 @@ def _build_source(source_type: str, name: str, config: dict):
     from ..sources.wechat import WeChatSource
     from ..sources.rss import RSSSource
     from ..sources.web import WebSource
+    from ..sources.xiaohongshu import XiaohongshuSource
 
     mapping = {
         "wechat": WeChatSource,
         "rss": RSSSource,
         "web": WebSource,
+        "xiaohongshu": XiaohongshuSource,
+        "xhs": XiaohongshuSource,
     }
     cls = mapping.get(source_type)
     if not cls:
@@ -32,6 +35,10 @@ def _build_processor(step: dict, global_config: GlobalConfig):
     from ..processors.deduplicator import Deduplicator
     from ..processors.ai_relevance import AIRelevanceFilter
     from ..processors.ai_summarize import AISummarizer
+    from ..processors.content_fetcher import ContentFetcherProcessor
+    from ..processors.reference_validator import ReferenceValidator
+    from ..processors.citation_validator import CitationValidator
+    from ..processors.quality_scorer import QualityScorer
 
     step_type = step.get("step", "")
     cfg = {k: v for k, v in step.items() if k != "step"}
@@ -41,6 +48,13 @@ def _build_processor(step: dict, global_config: GlobalConfig):
         "dedup": Deduplicator,
         "ai_relevance": AIRelevanceFilter,
         "ai_summarize": AISummarizer,
+        "content_fetcher": ContentFetcherProcessor,
+        "content_fetch": ContentFetcherProcessor,
+        "citation_validator": CitationValidator,
+        "reference_validator": ReferenceValidator,
+        "reference_validate": ReferenceValidator,
+        "quality_scorer": QualityScorer,
+        "quality_score": QualityScorer,
     }
     cls = mapping.get(step_type)
     if not cls:
@@ -95,8 +109,8 @@ class Pipeline:
 
         # ── 阶段三：生成报告 ──
         notify("output", 0, 1, "生成报告...")
-        from ..outputs.markdown import MarkdownOutput
-        output = MarkdownOutput(config=self.task.output_config)
+        output_format = self.task.output_config.get("format", "markdown")
+        output = self._build_output(output_format)
         output._global_config = self.global_config
 
         template_name = self.task.output_config.get("template", "competitor_analysis")
@@ -104,6 +118,21 @@ class Pipeline:
         notify("output", 1, 1, "报告生成完成")
 
         return report_md
+
+    def _build_output(self, output_format: str):
+        """根据输出格式实例化 Output 对象"""
+        from ..outputs.markdown import MarkdownOutput
+        from ..outputs.feishu import FeishuOutput
+        from ..outputs.pdf import PDFOutput
+
+        mapping = {
+            "markdown": MarkdownOutput,
+            "md": MarkdownOutput,
+            "feishu": FeishuOutput,
+            "pdf": PDFOutput,
+        }
+        cls = mapping.get(output_format, MarkdownOutput)
+        return cls(config=self.task.output_config)
 
     def _fetch_all(self, context: ResearchContext, since: datetime, notify) -> list:
         """并行抓取所有已启用的数据源"""

@@ -1,0 +1,38 @@
+name: 用户研究报告
+description: 深度了解目标用户需求、行为与痛点，适用于产品设计前的用户研究
+
+synthesis_prompt: |
+  你是一位资深 UX 研究员。
+  基于以下 {article_count} 篇资料，撰写关于"{topic}"的用户研究报告。
+  要求：聚焦用户视角、洞察行为模式、语言专业、中文输出。
+
+  参考资料：
+  {articles_summary}
+
+sections:
+  - id: user_profile
+    title: 目标用户画像
+    prompt: "描述{topic}相关用户的基本画像：年龄、职业、使用场景、技术背景等"
+    max_words: 400
+
+  - id: pain_points
+    title: 核心痛点与需求
+    prompt: "归纳{topic}用户反映最多的痛点，按频率和严重程度排列，附真实反馈引用（如有）"
+    max_words: 500
+
+  - id: behavior_patterns
+    title: 使用行为与路径
+    prompt: "描述用户在{topic}相关场景下的典型使用流程和行为模式"
+    max_words: 400
+
+  - id: satisfaction
+    title: 满意度与改进期望
+    prompt: "总结用户对现有方案的满意度，以及他们期望的改进方向"
+    max_words: 350
+
+  - id: design_implications
+    title: 设计建议
+    prompt: "基于以上用户洞察，给出 3-5 条具体的产品设计或服务优化建议"
+    max_words: 350
+
+include_source_list: true

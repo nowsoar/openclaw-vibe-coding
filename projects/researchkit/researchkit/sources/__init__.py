@@ -1,6 +1,7 @@
 from .base import BaseSource
-from .rss import RssSource
-from .wechat import WechatSource
+from .rss import RSSSource
+from .wechat import WeChatSource
 from .web import WebSource
+from .xiaohongshu import XiaohongshuSource
 
-__all__ = ["BaseSource", "RssSource", "WechatSource", "WebSource"]
+__all__ = ["BaseSource", "RSSSource", "WeChatSource", "WebSource", "XiaohongshuSource"]

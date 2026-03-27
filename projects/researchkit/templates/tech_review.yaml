@@ -1,0 +1,38 @@
+name: 技术评测报告
+description: 对技术产品、框架或工具进行全面评测，适用于技术选型决策
+
+synthesis_prompt: |
+  你是一位资深技术架构师。
+  基于以下 {article_count} 篇技术资料，撰写关于"{topic}"的技术评测报告。
+  要求：客观严谨、有数据支撑、给出明确结论和推荐，中文输出。
+
+  参考资料：
+  {articles_summary}
+
+sections:
+  - id: overview
+    title: 技术概述
+    prompt: "介绍{topic}的核心技术原理、架构设计和主要功能特性"
+    max_words: 400
+
+  - id: performance
+    title: 性能评估
+    prompt: "从吞吐量、延迟、资源消耗等维度评估{topic}的性能表现，如有基准数据请引用"
+    max_words: 450
+
+  - id: pros_cons
+    title: 优缺点分析
+    prompt: "系统梳理{topic}的主要优势和明显缺点，给出适用场景和不适用场景"
+    max_words: 500
+
+  - id: comparison
+    title: 竞品对比
+    prompt: "与同类技术方案对比，说明{topic}的差异化优势和劣势"
+    max_words: 400
+
+  - id: recommendation
+    title: 选型建议
+    prompt: "综合以上分析，给出技术选型建议：在什么场景下推荐或不推荐使用{topic}"
+    max_words: 300
+
+include_source_list: true
