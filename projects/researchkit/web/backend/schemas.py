@@ -39,6 +39,7 @@ class TaskResponse(BaseModel):
     article_count: int = 0
     report_path: Optional[str] = None
     error: Optional[str] = None
+    user_id: Optional[int] = None
     created_at: str
     started_at: Optional[str] = None
     finished_at: Optional[str] = None

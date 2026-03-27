@@ -135,6 +135,8 @@ async def _async_execute(task_id: int):
             session.commit()
 
             await manager.send_done(task_id, article_count, str(report_path) if report_path else "")
+            from ..notifier import notify_task_done
+            await notify_task_done(task_id, task.topic, article_count, task.report_path or "")
 
         except Exception as exc:
             logger.exception(f"任务 {task_id} 执行失败")
@@ -144,6 +146,8 @@ async def _async_execute(task_id: int):
             session.add(task)
             session.commit()
             await manager.send_error(task_id, str(exc))
+            from ..notifier import notify_task_failed
+            await notify_task_failed(task_id, task.topic, str(exc))
 
 
 async def _run_pipeline(task: ResearchTask):

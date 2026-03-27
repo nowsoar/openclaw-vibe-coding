@@ -8,6 +8,12 @@ const routes = [
     meta: { title: '仪表盘' }
   },
   {
+    path: '/login',
+    name: 'login',
+    component: () => import('../views/Login.vue'),
+    meta: { title: '登录', layout: 'blank' }
+  },
+  {
     path: '/tasks/new',
     name: 'new-task',
     component: () => import('../views/NewTask.vue'),

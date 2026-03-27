@@ -220,7 +220,118 @@ def history():
     console.print(table)
 
 
-def _parse_time_range(value: str) -> int:
+@app.command("schedule-add")
+def schedule_add(
+    task_file: Path = typer.Argument(..., help="调研任务 YAML 文件路径"),
+    cron: str = typer.Option(..., "--cron", "-c", help="Cron 表达式，如 '0 8 * * *'"),
+    task_id: Optional[str] = typer.Option(None, "--id", help="自定义任务 ID（默认用文件名）"),
+    incremental: bool = typer.Option(False, "--incremental", help="增量更新模式"),
+):
+    """添加定时调研任务"""
+    if not task_file.exists():
+        console.print(f"[red]✗ 任务文件不存在：{task_file}[/red]")
+        raise typer.Exit(1)
+
+    from .core.config import load_task_config
+    from web.backend.scheduler import scheduler
+
+    task_data = load_task_config(task_file)
+    tid = task_id or task_file.stem
+
+    scheduler.start()
+    try:
+        result = scheduler.add_task(
+            task_id=tid,
+            task_config=task_data,
+            cron_expr=cron,
+            incremental=incremental,
+        )
+        console.print(f"[green]✓ 已添加定时任务：{tid}[/green]")
+        console.print(f"  Cron：{cron}")
+        console.print(f"  下次执行：{result.get('next_run', '未知')}")
+    except ValueError as e:
+        console.print(f"[red]✗ 添加失败：{e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("schedule-list")
+def schedule_list():
+    """列出所有定时调研任务"""
+    from web.backend.scheduler import scheduler
+
+    scheduler.start()
+    tasks = scheduler.list_tasks()
+
+    if not tasks:
+        console.print("[dim]暂无定时任务[/dim]")
+        return
+
+    table = Table(title="定时调研任务", show_header=True)
+    table.add_column("任务 ID", style="bold")
+    table.add_column("Cron")
+    table.add_column("下次执行")
+    table.add_column("上次执行")
+    table.add_column("增量")
+
+    for t in tasks:
+        table.add_row(
+            t.get("task_id", ""),
+            t.get("cron_expr", ""),
+            (t.get("next_run") or "")[:19],
+            (t.get("last_run") or "-")[:19],
+            "是" if t.get("incremental") else "否",
+        )
+
+    console.print(table)
+
+
+@app.command("schedule-remove")
+def schedule_remove(
+    task_id: str = typer.Argument(..., help="要删除的任务 ID"),
+):
+    """删除定时调研任务"""
+    from web.backend.scheduler import scheduler
+
+    scheduler.start()
+    removed = scheduler.remove_task(task_id)
+    if removed:
+        console.print(f"[green]✓ 已删除定时任务：{task_id}[/green]")
+    else:
+        console.print(f"[yellow]⚠ 未找到任务：{task_id}[/yellow]")
+
+
+@app.command("schedule-trigger")
+def schedule_trigger(
+    task_id: str = typer.Argument(..., help="要立即触发的任务 ID"),
+):
+    """立即触发一次定时任务"""
+    from web.backend.scheduler import scheduler
+
+    scheduler.start()
+    try:
+        scheduler.trigger_now(task_id)
+        console.print(f"[green]✓ 已触发执行：{task_id}[/green]")
+    except ValueError as e:
+        console.print(f"[red]✗ 触发失败：{e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("plugins")
+def list_plugins():
+    """列出已安装的 ResearchKit 插件"""
+    from .plugins import PluginType, list_plugins as _list
+
+    for plugin_type in PluginType:
+        plugins = _list(plugin_type)
+        table = Table(title=f"{plugin_type.value} 插件", show_header=True)
+        table.add_column("名称", style="bold")
+        table.add_column("类")
+        for name, cls in sorted(plugins.items()):
+            table.add_row(name, f"{cls.__module__}.{cls.__name__}")
+        console.print(table)
+
+
+
     """解析时间范围字符串，如 '30d' / '7d' / '30'"""
     if isinstance(value, int):
         return value

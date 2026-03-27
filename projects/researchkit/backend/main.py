@@ -12,7 +12,9 @@ from .api import tasks as tasks_router
 from .api import sources as sources_router
 from .api import reports as reports_router
 from .api import auth as auth_router
+from .api import schedules as schedules_router
 from .ws.progress import manager
+from . import scheduler as task_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +25,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    task_scheduler.start()
+    task_scheduler.restore_all_jobs()
     logger.info("ResearchKit backend started, database initialized.")
     yield
+    task_scheduler.shutdown()
     logger.info("ResearchKit backend shutting down.")
 
 
@@ -49,6 +54,7 @@ app.include_router(auth_router.router, prefix="/api")
 app.include_router(tasks_router.router, prefix="/api")
 app.include_router(sources_router.router, prefix="/api")
 app.include_router(reports_router.router, prefix="/api")
+app.include_router(schedules_router.router, prefix="/api")
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────

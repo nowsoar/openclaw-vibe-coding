@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel as _BaseModel
 
 from .schemas import (
     TaskCreate,
@@ -23,6 +24,9 @@ from .schemas import (
     ProgressEvent,
 )
 from .storage import TaskStore
+from .database import init_db, get_db
+from .routers.auth import router as auth_router, get_current_user
+from .scheduler import scheduler as _scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -47,38 +51,67 @@ store = TaskStore()
 _ws_connections: dict[str, list[WebSocket]] = {}
 
 
+@app.on_event("startup")
+async def startup():
+    init_db()
+    _scheduler.start()
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    _scheduler.shutdown(wait=False)
+
+
+# 注册认证路由
+app.include_router(auth_router)
+
+
 # ─── 任务管理 CRUD ──────────────────────────────────────────────────────────
 
 @app.get("/api/tasks", response_model=list[TaskResponse])
-async def list_tasks():
-    return store.list_tasks()
+async def list_tasks(current_user=Depends(get_current_user)):
+    tasks = store.list_tasks()
+    if current_user:
+        tasks = [t for t in tasks if t.get("user_id") == current_user.id]
+    return tasks
 
 
 @app.post("/api/tasks", response_model=TaskResponse, status_code=201)
-async def create_task(body: TaskCreate):
+async def create_task(body: TaskCreate, current_user=Depends(get_current_user)):
     task = store.create_task(body)
+    if current_user:
+        store.update_task(task["id"], {"user_id": current_user.id})
+        task["user_id"] = current_user.id
     return task
 
 
 @app.get("/api/tasks/{task_id}", response_model=TaskResponse)
-async def get_task(task_id: str):
+async def get_task(task_id: str, current_user=Depends(get_current_user)):
     task = store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    if current_user and task.get("user_id") and task["user_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问此任务")
     return task
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)
-async def delete_task(task_id: str):
-    if not store.delete_task(task_id):
-        raise HTTPException(status_code=404, detail="任务不存在")
-
-
-@app.post("/api/tasks/{task_id}/run", response_model=TaskResponse)
-async def run_task(task_id: str):
+async def delete_task(task_id: str, current_user=Depends(get_current_user)):
     task = store.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    if current_user and task.get("user_id") and task["user_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="无权删除此任务")
+    store.delete_task(task_id)
+
+
+@app.post("/api/tasks/{task_id}/run", response_model=TaskResponse)
+async def run_task(task_id: str, current_user=Depends(get_current_user)):
+    task = store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if current_user and task.get("user_id") and task["user_id"] != current_user.id:
+        raise HTTPException(status_code=403, detail="无权运行此任务")
     if task["status"] == TaskStatus.RUNNING:
         raise HTTPException(status_code=409, detail="任务正在运行中")
 
@@ -164,6 +197,86 @@ async def update_template(template_id: str, body: dict):
         raise HTTPException(status_code=404, detail="模板不存在")
     path.write_text(yaml.dump(body, allow_unicode=True, default_flow_style=False), encoding="utf-8")
     return {"id": template_id, **body}
+
+
+class ScheduleCreate(_BaseModel):
+    task_id: str
+    task_config: dict
+    cron_expr: str
+    incremental: bool = False
+    notification_config: Optional[dict] = None
+
+
+# ─── 定时任务管理 ─────────────────────────────────────────────────────────────
+
+@app.get("/api/schedules")
+async def list_schedules(current_user=Depends(get_current_user)):
+    return _scheduler.list_tasks()
+
+
+@app.post("/api/schedules", status_code=201)
+async def create_schedule(body: ScheduleCreate, current_user=Depends(get_current_user)):
+    try:
+        return _scheduler.add_task(
+            task_id=body.task_id,
+            task_config=body.task_config,
+            cron_expr=body.cron_expr,
+            incremental=body.incremental,
+            notification_config=body.notification_config,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/schedules/{task_id}")
+async def get_schedule(task_id: str):
+    sched = _scheduler.get_task(task_id)
+    if not sched:
+        raise HTTPException(status_code=404, detail="定时任务不存在")
+    return sched
+
+
+@app.delete("/api/schedules/{task_id}", status_code=204)
+async def delete_schedule(task_id: str):
+    _scheduler.remove_task(task_id)
+
+
+@app.post("/api/schedules/{task_id}/pause", status_code=204)
+async def pause_schedule(task_id: str):
+    try:
+        _scheduler.pause_task(task_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/schedules/{task_id}/resume", status_code=204)
+async def resume_schedule(task_id: str):
+    try:
+        _scheduler.resume_task(task_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/schedules/{task_id}/trigger", status_code=202)
+async def trigger_schedule(task_id: str):
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, _scheduler.trigger_now, task_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"message": "已触发执行"}
+
+
+# ─── 插件信息 ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/plugins")
+async def list_available_plugins():
+    from researchkit.plugins import PluginType, list_plugins
+    return {
+        "sources": list(list_plugins(PluginType.SOURCE).keys()),
+        "processors": list(list_plugins(PluginType.PROCESSOR).keys()),
+        "outputs": list(list_plugins(PluginType.OUTPUT).keys()),
+    }
 
 
 # ─── WebSocket 进度推送 ──────────────────────────────────────────────────────

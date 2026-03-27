@@ -1,6 +1,10 @@
 <template>
   <el-config-provider :locale="zhCn">
-    <el-container class="app-container">
+    <!-- 登录页使用空白布局 -->
+    <router-view v-if="$route.meta.layout === 'blank'" />
+
+    <!-- 主应用布局 -->
+    <el-container v-else class="app-container">
       <el-aside width="220px" class="sidebar">
         <div class="logo">
           <el-icon><DataAnalysis /></el-icon>
@@ -29,6 +33,16 @@
       <el-container>
         <el-header class="top-bar">
           <span class="page-title">{{ $route.meta.title || 'ResearchKit' }}</span>
+          <div class="user-area">
+            <template v-if="authStore.isLoggedIn">
+              <el-avatar size="small" :icon="UserFilled" />
+              <span class="username">{{ authStore.user?.username }}</span>
+              <el-button text size="small" @click="handleLogout">退出</el-button>
+            </template>
+            <template v-else>
+              <el-button size="small" @click="$router.push('/login')">登录 / 注册</el-button>
+            </template>
+          </div>
         </el-header>
         <el-main class="main-content">
           <router-view />
@@ -39,7 +53,20 @@
 </template>
 
 <script setup>
+import { UserFilled } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
+import { useAuthStore } from './stores/auth'
+
+const authStore = useAuthStore()
+const router = useRouter()
+
+async function handleLogout() {
+  await authStore.logout()
+  ElMessage.success('已退出登录')
+  router.push('/login')
+}
 </script>
 
 <style>
