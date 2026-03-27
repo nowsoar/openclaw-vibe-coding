@@ -27,6 +27,10 @@
             <el-icon><Document /></el-icon>
             <span>报告模板</span>
           </el-menu-item>
+          <el-menu-item index="/settings">
+            <el-icon><Setting /></el-icon>
+            <span>设置</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -53,7 +57,7 @@
 </template>
 
 <script setup>
-import { UserFilled } from '@element-plus/icons-vue'
+import { UserFilled, Setting } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'

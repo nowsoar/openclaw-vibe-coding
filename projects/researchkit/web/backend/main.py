@@ -27,6 +27,7 @@ from .storage import TaskStore
 from .database import init_db, get_db
 from .routers.auth import router as auth_router, get_current_user
 from .routers.organizations import router as orgs_router
+from .routers import settings as settings_router
 from .scheduler import scheduler as _scheduler
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,8 @@ async def shutdown():
 app.include_router(auth_router)
 # 注册组织路由
 app.include_router(orgs_router)
+# 注册设置路由
+app.include_router(settings_router.router, prefix="/api")
 
 
 # ─── 任务管理 CRUD ──────────────────────────────────────────────────────────
@@ -117,6 +120,21 @@ async def run_task(task_id: str, current_user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="无权运行此任务")
     if task["status"] == TaskStatus.RUNNING:
         raise HTTPException(status_code=409, detail="任务正在运行中")
+
+    # ── 运行前校验凭证 ──
+    from researchkit.core.config import load_global_config
+    _global_cfg = load_global_config()
+    _api_key = _global_cfg.ai.api_key
+    if not _api_key or _api_key in ("", "YOUR_API_KEY_HERE", "${OPENAI_API_KEY}"):
+        raise HTTPException(status_code=400, detail="请先在「设置」页面配置 AI API Key")
+
+    # 检查任务是否包含微信数据源
+    _sources_cfg = task.get("sources_config", {})
+    _has_wechat = bool(_sources_cfg.get("wechat"))
+    if _has_wechat:
+        from .routers.settings import _WECHAT_AUTH_FILE
+        if not _WECHAT_AUTH_FILE.exists():
+            raise HTTPException(status_code=400, detail="请先在「设置 → 微信公众号」页面配置微信凭证")
 
     store.update_task(task_id, {"status": TaskStatus.RUNNING, "started_at": datetime.now().isoformat()})
     asyncio.create_task(_run_pipeline(task_id, task))

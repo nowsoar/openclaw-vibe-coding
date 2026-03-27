@@ -42,6 +42,12 @@ const routes = [
     name: 'templates',
     component: () => import('../views/Templates.vue'),
     meta: { title: '报告模板' }
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('../views/Settings.vue'),
+    meta: { title: '系统设置' }
   }
 ]
 
